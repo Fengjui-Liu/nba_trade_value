@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.trade_value_engine import TradeValueEngine
 from modules.contract_module import ContractModule
-from modules.ai_analysis_module import AIAnalysisModule, ClaudeAnalysisEngine
+from modules.ai_analysis_module import AIAnalysisModule, ClaudeAnalysisEngine, OllamaAnalysisEngine
 
 # 頁面配置
 st.set_page_config(
@@ -447,15 +447,29 @@ def render_ai_analysis(df: pd.DataFrame):
     """渲染 AI 分析頁面"""
     st.header("🤖 AI 智能分析")
 
-    # 檢查 API 狀態
+    # 檢查 AI 可用狀態
     api_key = os.getenv('ANTHROPIC_API_KEY')
     claude_available = api_key is not None
 
+    # 檢查 Ollama
+    ollama = OllamaAnalysisEngine()
+    ollama_available = ollama.is_available()
+
+    # 決定使用哪個 AI
+    ai_backend = "none"
     if claude_available:
-        st.success("✅ Claude API 已連接 - 可使用智能分析")
+        ai_backend = "claude"
+        st.success("✅ Claude API 已連接")
+    elif ollama_available:
+        ai_backend = "ollama"
+        st.success("✅ Ollama 本地 AI 已連接（免費）")
     else:
-        st.warning("⚠️ 未設置 ANTHROPIC_API_KEY - 使用本地規則分析")
-        st.info("設置方式：`export ANTHROPIC_API_KEY='your-key'` 或在 .env 檔案中設定")
+        st.warning("⚠️ 無 AI 連接 - 使用本地規則分析")
+        st.info("""
+**啟用 AI 的方式：**
+1. **Ollama（免費）**: 安裝 [Ollama](https://ollama.com)，執行 `ollama pull llama3.1` 和 `ollama serve`
+2. **Claude API（付費）**: 設置 `ANTHROPIC_API_KEY` 環境變數
+        """)
 
     # 分頁選擇
     ai_tab = st.radio(
@@ -465,14 +479,14 @@ def render_ai_analysis(df: pd.DataFrame):
     )
 
     if ai_tab == "💬 AI 對話":
-        render_ai_chat(df, claude_available)
+        render_ai_chat(df, ai_backend)
     elif ai_tab == "📊 球隊分析":
-        render_ai_team_analysis(df, claude_available)
+        render_ai_team_analysis(df, ai_backend)
     elif ai_tab == "🔄 交易分析":
-        render_ai_trade_analysis(df, claude_available)
+        render_ai_trade_analysis(df, ai_backend)
 
 
-def render_ai_chat(df: pd.DataFrame, claude_available: bool):
+def render_ai_chat(df: pd.DataFrame, ai_backend: str):
     """渲染 AI 對話介面"""
     st.subheader("💬 與 AI 對話")
 
@@ -507,8 +521,15 @@ def render_ai_chat(df: pd.DataFrame, claude_available: bool):
 
         # 生成回答
         with st.spinner("AI 思考中..."):
-            ai_module = AIAnalysisModule()
-            response = ai_module.query(df, question, use_ai=claude_available)
+            if ai_backend == "ollama":
+                ollama = OllamaAnalysisEngine()
+                response = ollama.answer_question(df, question)
+            elif ai_backend == "claude":
+                claude = ClaudeAnalysisEngine()
+                response = claude.answer_trade_question(df, question)
+            else:
+                ai_module = AIAnalysisModule()
+                response = ai_module.query(df, question, use_ai=False)
 
         st.session_state.chat_history.append({"role": "assistant", "content": response})
 
@@ -524,7 +545,7 @@ def render_ai_chat(df: pd.DataFrame, claude_available: bool):
             st.rerun()
 
 
-def render_ai_team_analysis(df: pd.DataFrame, claude_available: bool):
+def render_ai_team_analysis(df: pd.DataFrame, ai_backend: str):
     """渲染 AI 球隊分析"""
     st.subheader("📊 球隊深度分析")
 
@@ -539,19 +560,22 @@ def render_ai_team_analysis(df: pd.DataFrame, claude_available: bool):
     if st.button("🚀 開始分析", type="primary"):
         team_df = df[df['TEAM_ABBREVIATION'] == selected_team]
 
-        with st.spinner("AI 分析中..."):
-            if claude_available:
-                # 使用 Claude API
-                claude = ClaudeAnalysisEngine()
-                if analysis_type == "陣容診斷":
-                    question = "請對這支球隊進行完整的陣容診斷，包含優劣勢分析"
-                elif analysis_type == "交易建議":
-                    question = "請提供具體的交易建議，包含應該交易出去的球員和適合追求的目標"
-                elif analysis_type == "補強方向":
-                    question = "請分析這支球隊的補強優先順序和推薦的球員類型"
-                else:
-                    question = "請提供選秀策略建議，包含應該優先選擇的位置和球員類型"
+        # 設定問題
+        if analysis_type == "陣容診斷":
+            question = "請對這支球隊進行完整的陣容診斷，包含優劣勢分析"
+        elif analysis_type == "交易建議":
+            question = "請提供具體的交易建議，包含應該交易出去的球員和適合追求的目標"
+        elif analysis_type == "補強方向":
+            question = "請分析這支球隊的補強優先順序和推薦的球員類型"
+        else:
+            question = "請提供選秀策略建議，包含應該優先選擇的位置和球員類型"
 
+        with st.spinner("AI 分析中..."):
+            if ai_backend == "ollama":
+                ollama = OllamaAnalysisEngine()
+                analysis_result = ollama.analyze_team(df, selected_team, question)
+            elif ai_backend == "claude":
+                claude = ClaudeAnalysisEngine()
                 analysis_result = claude.analyze_with_claude(df, selected_team, question)
             else:
                 # 使用本地規則分析
@@ -564,7 +588,7 @@ def render_ai_team_analysis(df: pd.DataFrame, claude_available: bool):
             st.markdown(analysis_result)
 
 
-def render_ai_trade_analysis(df: pd.DataFrame, claude_available: bool):
+def render_ai_trade_analysis(df: pd.DataFrame, ai_backend: str):
     """渲染 AI 交易分析"""
     st.subheader("🔄 AI 輔助交易分析")
 
@@ -585,11 +609,21 @@ def render_ai_trade_analysis(df: pd.DataFrame, claude_available: bool):
             st.error("請選擇雙方要交易的球員")
         else:
             with st.spinner("AI 分析交易中..."):
-                if claude_available:
+                if ai_backend == "claude":
                     claude = ClaudeAnalysisEngine()
                     result = claude.simulate_trade_analysis(
                         df, team_a, team_a_gives, team_b, team_b_gives
                     )
+                elif ai_backend == "ollama":
+                    # 使用 Ollama 分析交易
+                    ollama = OllamaAnalysisEngine()
+                    trade_players = ', '.join(team_a_gives + team_b_gives)
+                    prompt = f"""分析這筆交易：
+{team_a} 送出: {', '.join(team_a_gives)}
+{team_b} 送出: {', '.join(team_b_gives)}
+
+請評估：1. 交易是否公平 2. 對雙方的影響 3. 薪資匹配可行性"""
+                    result = ollama.chat(prompt, "你是 NBA 交易分析專家，請用繁體中文回答。")
                 else:
                     # 本地分析
                     engine = TradeValueEngine()
@@ -611,7 +645,7 @@ def render_ai_trade_analysis(df: pd.DataFrame, claude_available: bool):
 ### 結論
 {trade_result['verdict']}
 
-💡 **提示**: 設置 ANTHROPIC_API_KEY 可獲得更詳細的 AI 分析
+💡 **提示**: 安裝 Ollama 或設置 ANTHROPIC_API_KEY 可獲得更詳細的 AI 分析
 """
 
                 st.markdown("---")
@@ -817,8 +851,12 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown("🏀 NBA Trade Value System v2.0")
     st.sidebar.markdown("📊 數據更新: 2024-25 賽季")
-    api_status = "🟢" if os.getenv('ANTHROPIC_API_KEY') else "🔴"
-    st.sidebar.markdown(f"{api_status} Claude API")
+
+    # AI 狀態
+    ollama_check = OllamaAnalysisEngine()
+    ollama_status = "🟢" if ollama_check.is_available() else "🔴"
+    claude_status = "🟢" if os.getenv('ANTHROPIC_API_KEY') else "🔴"
+    st.sidebar.markdown(f"{ollama_status} Ollama | {claude_status} Claude")
 
 
 if __name__ == "__main__":

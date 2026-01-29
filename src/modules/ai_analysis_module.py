@@ -684,6 +684,108 @@ class AIAnalysisModule:
         return '\n'.join(lines)
 
 
+# Ollama 本地 LLM 整合 (免費)
+class OllamaAnalysisEngine:
+    """
+    Ollama 本地 LLM 引擎（完全免費）
+
+    需要先安裝 Ollama 並下載模型：
+    1. 安裝: https://ollama.com/download
+    2. 下載模型: ollama pull llama3.1
+    3. 啟動服務: ollama serve
+    """
+
+    def __init__(self, model: str = "llama3.1", base_url: str = "http://localhost:11434"):
+        self.model = model
+        self.base_url = base_url
+
+    def is_available(self) -> bool:
+        """檢查 Ollama 是否可用"""
+        try:
+            import requests
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=2)
+            return resp.status_code == 200
+        except:
+            return False
+
+    def chat(self, prompt: str, system: str = None) -> str:
+        """與 Ollama 對話"""
+        import requests
+
+        if not self.is_available():
+            return "❌ Ollama 未啟動。請先執行 `ollama serve` 並下載模型 `ollama pull llama3.1`"
+
+        try:
+            full_prompt = prompt
+            if system:
+                full_prompt = f"{system}\n\n{prompt}"
+
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": full_prompt,
+                    "stream": False
+                },
+                timeout=120
+            )
+
+            if response.status_code == 200:
+                return response.json().get("response", "無回應")
+            else:
+                return f"❌ Ollama 錯誤: {response.status_code}"
+        except Exception as e:
+            return f"❌ 錯誤: {str(e)}"
+
+    def analyze_team(self, df: pd.DataFrame, team: str, question: str = None) -> str:
+        """使用 Ollama 分析球隊"""
+        team_df = df[df['TEAM_ABBREVIATION'] == team]
+        context = self._prepare_context(team_df)
+
+        system = "你是一位專業的 NBA 數據分析師，精通球員交易、薪資帽規則、球隊建構策略。請用繁體中文回答，提供具體、可執行的建議。"
+
+        if question:
+            prompt = f"以下是 {team} 隊的球員數據：\n\n{context}\n\n問題：{question}"
+        else:
+            prompt = f"""以下是 {team} 隊的球員數據：
+
+{context}
+
+請提供完整的球隊分析報告，包含：
+1. 陣容優劣勢評估
+2. 具體的交易建議
+3. 補強優先順序
+4. 爭冠窗口評估"""
+
+        return self.chat(prompt, system)
+
+    def answer_question(self, df: pd.DataFrame, question: str) -> str:
+        """回答關於 NBA 的問題"""
+        top_players = df.nlargest(30, 'TRADE_VALUE')[
+            ['PLAYER_NAME', 'TEAM_ABBREVIATION', 'AGE', 'PTS', 'REB', 'AST',
+             'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M']
+        ].to_string(index=False)
+
+        system = "你是一位專業的 NBA 數據分析師。請用繁體中文回答，根據提供的數據給出具體分析。"
+
+        prompt = f"""以下是 NBA 交易價值前 30 名球員的數據：
+
+{top_players}
+
+用戶問題：{question}
+
+請根據數據提供專業分析。"""
+
+        return self.chat(prompt, system)
+
+    def _prepare_context(self, team_df: pd.DataFrame) -> str:
+        """準備上下文數據"""
+        context_cols = ['PLAYER_NAME', 'AGE', 'PTS', 'REB', 'AST',
+                       'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M']
+        available_cols = [c for c in context_cols if c in team_df.columns]
+        return team_df[available_cols].to_string(index=False)
+
+
 # Claude API 整合 (進階功能)
 class ClaudeAnalysisEngine:
     """
