@@ -573,35 +573,102 @@ class AIAnalysisModule:
         
         return '\n'.join(report)
     
-    def query(self, df: pd.DataFrame, question: str) -> str:
+    def query(self, df: pd.DataFrame, question: str, use_ai: bool = True) -> str:
         """
-        自然語言查詢 (可整合 Claude API)
-        
+        自然語言查詢
+
+        參數：
+        - df: 球員數據
+        - question: 用戶問題
+        - use_ai: 是否使用 Claude API（若可用）
+
         範例問題：
         - "誰是性價比最高的控球後衛？"
         - "哪支球隊最需要補強中鋒？"
         - "30 歲以下最佳的交易目標是誰？"
+        - "OKC 應該追求哪些球員？"
+        - "分析一下湖人隊的陣容"
         """
+        # 嘗試使用 Claude API
+        if use_ai and self.api_key:
+            claude = ClaudeAnalysisEngine(self.api_key)
+            if claude.is_available():
+                return claude.answer_trade_question(df, question)
+
+        # 本地規則式查詢（備用）
         question_lower = question.lower()
-        
-        # 簡單的關鍵字匹配 (可用 Claude API 增強)
+
+        # 簡單的關鍵字匹配
         if '性價比' in question or '剩餘價值' in question:
             if '控球' in question or 'PG' in question.upper():
                 result = df[df['POSITIONS'].str.contains('PG', na=False)].nlargest(10, 'SURPLUS_VALUE_M')
                 return self._format_player_list(result, "性價比最高的控球後衛")
+            elif '中鋒' in question or 'C' in question.upper():
+                result = df[df['POSITIONS'].str.contains('C', na=False)].nlargest(10, 'SURPLUS_VALUE_M')
+                return self._format_player_list(result, "性價比最高的中鋒")
+            elif '側翼' in question or 'SF' in question.upper():
+                result = df[df['POSITIONS'].str.contains('SF', na=False)].nlargest(10, 'SURPLUS_VALUE_M')
+                return self._format_player_list(result, "性價比最高的側翼")
             else:
                 result = df.nlargest(10, 'SURPLUS_VALUE_M')
                 return self._format_player_list(result, "性價比最高的球員")
-        
+
         if '交易價值' in question and '最高' in question:
             result = df.nlargest(10, 'TRADE_VALUE')
             return self._format_player_list(result, "交易價值最高的球員")
-        
+
         if '年輕' in question or '25歲以下' in question:
             result = df[df['AGE'] <= 25].nlargest(10, 'TRADE_VALUE')
             return self._format_player_list(result, "25歲以下最佳球員")
-        
-        return "抱歉，我無法理解您的問題。請嘗試更具體的查詢。"
+
+        if '老將' in question or '30歲以上' in question:
+            result = df[df['AGE'] >= 30].nlargest(10, 'TRADE_VALUE')
+            return self._format_player_list(result, "30歲以上最佳老將")
+
+        if '低薪' in question or '便宜' in question:
+            result = df[df['SALARY_M'] < 10].nlargest(10, 'TRADE_VALUE')
+            return self._format_player_list(result, "低薪高價值球員（薪資 < $10M）")
+
+        if '新秀' in question:
+            result = df[df['AGE'] <= 23].nlargest(10, 'TRADE_VALUE')
+            return self._format_player_list(result, "最佳年輕新秀（23歲以下）")
+
+        # 球隊相關查詢
+        teams = df['TEAM_ABBREVIATION'].unique()
+        for team in teams:
+            if team.lower() in question_lower:
+                team_df = df[df['TEAM_ABBREVIATION'] == team]
+                return self._format_team_summary(team_df, team)
+
+        return "💡 提示：我可以回答關於球員性價比、交易價值、特定球隊分析等問題。\n\n" + \
+               "範例：\n" + \
+               "• 誰是性價比最高的控球後衛？\n" + \
+               "• 25歲以下交易價值最高的球員？\n" + \
+               "• OKC 的陣容分析\n\n" + \
+               "如需更智能的分析，請設置 ANTHROPIC_API_KEY 環境變數。"
+
+    def _format_team_summary(self, team_df: pd.DataFrame, team: str) -> str:
+        """格式化球隊摘要"""
+        lines = [f"## {team} 球隊摘要\n"]
+
+        total_salary = team_df['SALARY_M'].sum()
+        avg_age = team_df['AGE'].mean()
+        total_value = team_df['TRADE_VALUE'].sum()
+
+        lines.append(f"**總薪資**: ${total_salary:.1f}M")
+        lines.append(f"**平均年齡**: {avg_age:.1f} 歲")
+        lines.append(f"**總交易價值**: {total_value:.1f}\n")
+
+        lines.append("### 陣容（按交易價值排序）")
+        for _, row in team_df.nlargest(10, 'TRADE_VALUE').iterrows():
+            lines.append(
+                f"• **{row['PLAYER_NAME']}** - "
+                f"年齡 {row['AGE']:.0f}, "
+                f"薪資 ${row['SALARY_M']:.1f}M, "
+                f"交易價值 {row['TRADE_VALUE']:.1f}"
+            )
+
+        return '\n'.join(lines)
     
     def _format_player_list(self, df: pd.DataFrame, title: str) -> str:
         """格式化球員列表"""
@@ -621,62 +688,203 @@ class AIAnalysisModule:
 class ClaudeAnalysisEngine:
     """
     Claude API 整合引擎
-    
+
     用於更複雜的自然語言分析
     """
-    
+
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
-        self.base_url = "https://api.anthropic.com/v1/messages"
-        
-    def analyze_with_claude(self, df: pd.DataFrame, team: str, 
+        self.model = "claude-sonnet-4-20250514"
+        self._client = None
+
+    @property
+    def client(self):
+        """延遲初始化 Anthropic 客戶端"""
+        if self._client is None and self.api_key:
+            try:
+                import anthropic
+                self._client = anthropic.Anthropic(api_key=self.api_key)
+            except ImportError:
+                print("請安裝 anthropic: pip install anthropic")
+                return None
+        return self._client
+
+    def is_available(self) -> bool:
+        """檢查 API 是否可用"""
+        return self.api_key is not None and self.client is not None
+
+    def chat(self, messages: List[Dict], system: str = None) -> str:
+        """
+        與 Claude 對話
+
+        參數：
+        - messages: [{"role": "user", "content": "..."}]
+        - system: 系統提示詞
+        """
+        if not self.is_available():
+            return "❌ Claude API 未設置。請設置 ANTHROPIC_API_KEY 環境變數。"
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=system or "你是一位專業的 NBA 數據分析師，精通球員交易、薪資帽規則、球隊建構策略。請用繁體中文回答。",
+                messages=messages
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"❌ API 錯誤: {str(e)}"
+
+    def analyze_with_claude(self, df: pd.DataFrame, team: str,
                             question: str = None) -> str:
         """
         使用 Claude API 進行深度分析
-        
-        需要設置 ANTHROPIC_API_KEY 環境變數
         """
-        if not self.api_key:
-            return "未設置 API 金鑰，使用本地分析模式"
-        
+        if not self.is_available():
+            return "❌ 未設置 API 金鑰。請設置 ANTHROPIC_API_KEY 環境變數。"
+
         # 準備上下文數據
         team_df = df[df['TEAM_ABBREVIATION'] == team]
         context = self._prepare_context(team_df)
-        
+        full_league_summary = self._prepare_league_summary(df)
+
         # 建構 prompt
         if question:
-            prompt = f"""你是一位 NBA 專業分析師。根據以下球隊數據，回答問題。
+            user_message = f"""以下是 {team} 隊的球員數據：
 
-球隊數據：
 {context}
+
+聯盟概況：
+{full_league_summary}
 
 問題：{question}
 
-請提供專業、具體的分析。"""
+請提供專業、具體、可執行的建議。"""
         else:
-            prompt = f"""你是一位 NBA 專業分析師。根據以下球隊數據，提供完整的球隊分析報告。
+            user_message = f"""以下是 {team} 隊的球員數據：
 
-球隊數據：
 {context}
 
+聯盟概況：
+{full_league_summary}
+
+請提供完整的球隊分析報告，包含：
+1. 陣容優劣勢評估
+2. 具體的交易建議（含潛在交易對象）
+3. 補強優先順序
+4. 爭冠窗口評估與建議策略"""
+
+        return self.chat([{"role": "user", "content": user_message}])
+
+    def answer_trade_question(self, df: pd.DataFrame, question: str) -> str:
+        """
+        回答關於交易的自然語言問題
+        """
+        if not self.is_available():
+            return "❌ 未設置 API 金鑰。請設置 ANTHROPIC_API_KEY 環境變數。"
+
+        # 準備精簡的聯盟數據
+        summary = self._prepare_league_summary(df)
+        top_players = df.nlargest(50, 'TRADE_VALUE')[
+            ['PLAYER_NAME', 'TEAM_ABBREVIATION', 'AGE', 'PTS', 'REB', 'AST',
+             'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M', 'PLAY_STYLE_CN']
+        ].to_string(index=False)
+
+        user_message = f"""以下是 NBA 聯盟的數據摘要：
+
+{summary}
+
+交易價值前 50 名球員：
+{top_players}
+
+用戶問題：{question}
+
+請根據數據提供專業分析和具體建議。如果問題涉及特定球員或球隊，請引用相關數據。"""
+
+        return self.chat([{"role": "user", "content": user_message}])
+
+    def simulate_trade_analysis(self, df: pd.DataFrame,
+                                 team_a: str, team_a_gives: List[str],
+                                 team_b: str, team_b_gives: List[str]) -> str:
+        """
+        AI 輔助交易分析
+        """
+        if not self.is_available():
+            return "❌ 未設置 API 金鑰。"
+
+        # 取得交易涉及的球員數據
+        all_players = team_a_gives + team_b_gives
+        trade_players = df[df['PLAYER_NAME'].isin(all_players)]
+
+        if len(trade_players) == 0:
+            return "❌ 找不到指定的球員"
+
+        players_data = trade_players[
+            ['PLAYER_NAME', 'TEAM_ABBREVIATION', 'AGE', 'PTS', 'REB', 'AST',
+             'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M', 'PLAY_STYLE_CN',
+             'CONTRACT_TYPE_CN', 'YEARS_REMAINING']
+        ].to_string(index=False)
+
+        # 取得雙方球隊陣容
+        team_a_roster = df[df['TEAM_ABBREVIATION'] == team_a][
+            ['PLAYER_NAME', 'AGE', 'TRADE_VALUE', 'SALARY_M', 'PLAY_STYLE_CN']
+        ].to_string(index=False)
+
+        team_b_roster = df[df['TEAM_ABBREVIATION'] == team_b][
+            ['PLAYER_NAME', 'AGE', 'TRADE_VALUE', 'SALARY_M', 'PLAY_STYLE_CN']
+        ].to_string(index=False)
+
+        user_message = f"""分析以下交易提案：
+
+{team_a} 送出：{', '.join(team_a_gives)}
+{team_b} 送出：{', '.join(team_b_gives)}
+
+交易涉及的球員數據：
+{players_data}
+
+{team_a} 目前陣容：
+{team_a_roster}
+
+{team_b} 目前陣容：
+{team_b_roster}
+
 請分析：
-1. 陣容優劣勢
-2. 交易建議
-3. 補強方向
-4. 爭冠窗口評估"""
-        
-        # 呼叫 Claude API (需要實際實作)
-        # response = self._call_claude_api(prompt)
-        
-        # 暫時返回提示訊息
-        return "Claude API 整合功能開發中。請設置 ANTHROPIC_API_KEY 環境變數。"
-    
+1. 交易是否公平？雙方價值差異
+2. 對 {team_a} 的影響（優缺點）
+3. 對 {team_b} 的影響（優缺點）
+4. 薪資匹配是否可行？
+5. 你的最終建議（這交易應該發生嗎？）"""
+
+        return self.chat([{"role": "user", "content": user_message}])
+
     def _prepare_context(self, team_df: pd.DataFrame) -> str:
         """準備上下文數據"""
-        context_cols = ['PLAYER_NAME', 'AGE', 'PTS', 'REB', 'AST', 
-                       'TRADE_VALUE', 'SALARY_M', 'PLAY_STYLE_CN']
-        
-        return team_df[context_cols].to_string(index=False)
+        context_cols = ['PLAYER_NAME', 'AGE', 'PTS', 'REB', 'AST', 'STL', 'BLK',
+                       'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M',
+                       'PLAY_STYLE_CN', 'CONTRACT_TYPE_CN']
+        available_cols = [c for c in context_cols if c in team_df.columns]
+        return team_df[available_cols].to_string(index=False)
+
+    def _prepare_league_summary(self, df: pd.DataFrame) -> str:
+        """準備聯盟概況"""
+        total_players = len(df)
+        avg_salary = df['SALARY_M'].mean()
+        avg_age = df['AGE'].mean()
+
+        # 各等級人數
+        tier_counts = df['TRADE_VALUE_TIER'].value_counts().to_dict()
+
+        # 各隊數量
+        team_counts = df['TEAM_ABBREVIATION'].value_counts()
+
+        summary = f"""
+球員總數：{total_players}
+平均薪資：${avg_salary:.1f}M
+平均年齡：{avg_age:.1f}
+交易等級分布：{tier_counts}
+資料涵蓋球隊：{len(team_counts)} 隊
+"""
+        return summary
 
 
 if __name__ == "__main__":
