@@ -246,7 +246,7 @@ def demo_contract_analysis(df: pd.DataFrame):
 
 def main():
     """主程式入口"""
-    parser = argparse.ArgumentParser(description='NBA 交易價值評估系統')
+    parser = argparse.ArgumentParser(description='NBA 交易價值評估系統 v2.0')
     parser.add_argument('--data', type=str, default='data/processed/players_with_salary.csv',
                         help='輸入數據路徑')
     parser.add_argument('--output', type=str, default='data/processed',
@@ -257,15 +257,34 @@ def main():
                         help='執行示範模式')
     parser.add_argument('--dashboard', action='store_true',
                         help='啟動 Streamlit 儀表板')
-    
+    parser.add_argument('--fetch-contracts', action='store_true',
+                        help='從 Spotrac 抓取真實合約數據')
+    parser.add_argument('--chat', action='store_true',
+                        help='啟動 AI 對話模式')
+
     args = parser.parse_args()
-    
+
     # 啟動儀表板
     if args.dashboard:
-        print("啟動 Streamlit 儀表板...")
+        print("🚀 啟動 Streamlit 儀表板...")
+        print("   URL: http://localhost:8501")
         os.system('streamlit run src/dashboard/app.py')
         return
-    
+
+    # 抓取合約數據
+    if args.fetch_contracts:
+        print("📜 開始抓取真實合約數據...")
+        from src.data_collection.fetch_all_contracts import fetch_all_contracts, merge_contracts_to_players
+        players_df = pd.read_csv(args.data)
+        fetch_all_contracts(players_df, delay=1.5, output_path="data/raw/player_contracts.json")
+        print("✅ 合約數據抓取完成")
+        return
+
+    # AI 對話模式
+    if args.chat:
+        run_chat_mode(args.data)
+        return
+
     # 執行主流程
     df = run_pipeline(
         data_path=args.data,
@@ -273,7 +292,7 @@ def main():
         include_ai_analysis=args.ai_team is not None,
         target_team=args.ai_team
     )
-    
+
     # 示範模式
     if args.demo:
         demo_trade_simulation(df)
@@ -282,6 +301,49 @@ def main():
             demo_ai_analysis(df, args.ai_team)
         else:
             demo_ai_analysis(df, 'OKC')
+
+
+def run_chat_mode(data_path: str):
+    """AI 對話模式"""
+    print("=" * 70)
+    print("🤖 NBA 交易價值評估系統 - AI 對話模式")
+    print("=" * 70)
+    print("輸入問題與 AI 對話，輸入 'exit' 或 'quit' 結束")
+    print("-" * 70)
+
+    # 載入數據
+    df = pd.read_csv(data_path)
+    print(f"已載入 {len(df)} 名球員數據\n")
+
+    ai_module = AIAnalysisModule()
+
+    # 檢查 API 狀態
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    if api_key:
+        print("✅ Claude API 已連接\n")
+    else:
+        print("⚠️ 未設置 ANTHROPIC_API_KEY，使用本地規則分析")
+        print("   設置方式：export ANTHROPIC_API_KEY='your-key'\n")
+
+    while True:
+        try:
+            question = input("你: ").strip()
+            if not question:
+                continue
+            if question.lower() in ['exit', 'quit', 'q']:
+                print("再見！👋")
+                break
+
+            print("\nAI: ", end="")
+            response = ai_module.query(df, question, use_ai=bool(api_key))
+            print(response)
+            print()
+
+        except KeyboardInterrupt:
+            print("\n再見！👋")
+            break
+        except Exception as e:
+            print(f"錯誤: {e}\n")
 
 
 if __name__ == "__main__":

@@ -19,11 +19,19 @@ from plotly.subplots import make_subplots
 import os
 import sys
 
+# 載入環境變數
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # 加入專案路徑
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.trade_value_engine import TradeValueEngine
 from modules.contract_module import ContractModule
+from modules.ai_analysis_module import AIAnalysisModule, ClaudeAnalysisEngine
 
 # 頁面配置
 st.set_page_config(
@@ -438,29 +446,176 @@ def render_team_analysis(df: pd.DataFrame):
 def render_ai_analysis(df: pd.DataFrame):
     """渲染 AI 分析頁面"""
     st.header("🤖 AI 智能分析")
-    
-    st.info("此功能整合 Claude API 提供深度分析建議")
-    
+
+    # 檢查 API 狀態
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    claude_available = api_key is not None
+
+    if claude_available:
+        st.success("✅ Claude API 已連接 - 可使用智能分析")
+    else:
+        st.warning("⚠️ 未設置 ANTHROPIC_API_KEY - 使用本地規則分析")
+        st.info("設置方式：`export ANTHROPIC_API_KEY='your-key'` 或在 .env 檔案中設定")
+
+    # 分頁選擇
+    ai_tab = st.radio(
+        "選擇功能",
+        ["💬 AI 對話", "📊 球隊分析", "🔄 交易分析"],
+        horizontal=True
+    )
+
+    if ai_tab == "💬 AI 對話":
+        render_ai_chat(df, claude_available)
+    elif ai_tab == "📊 球隊分析":
+        render_ai_team_analysis(df, claude_available)
+    elif ai_tab == "🔄 交易分析":
+        render_ai_trade_analysis(df, claude_available)
+
+
+def render_ai_chat(df: pd.DataFrame, claude_available: bool):
+    """渲染 AI 對話介面"""
+    st.subheader("💬 與 AI 對話")
+
+    # 初始化對話歷史
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+
+    # 範例問題
+    st.markdown("**範例問題：**")
+    example_cols = st.columns(3)
+    examples = [
+        "誰是性價比最高的控球後衛？",
+        "25歲以下最佳球員是誰？",
+        "OKC 應該追求哪些球員？"
+    ]
+
+    for col, example in zip(example_cols, examples):
+        if col.button(example, key=f"ex_{example[:5]}"):
+            st.session_state.pending_question = example
+
+    # 對話輸入
+    user_input = st.chat_input("輸入你的問題...")
+
+    # 處理輸入（包括範例點擊）
+    question = user_input or st.session_state.get('pending_question', None)
+    if 'pending_question' in st.session_state:
+        del st.session_state.pending_question
+
+    if question:
+        # 加入對話歷史
+        st.session_state.chat_history.append({"role": "user", "content": question})
+
+        # 生成回答
+        with st.spinner("AI 思考中..."):
+            ai_module = AIAnalysisModule()
+            response = ai_module.query(df, question, use_ai=claude_available)
+
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+    # 顯示對話歷史
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # 清除對話按鈕
+    if st.session_state.chat_history:
+        if st.button("🗑️ 清除對話"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+
+def render_ai_team_analysis(df: pd.DataFrame, claude_available: bool):
+    """渲染 AI 球隊分析"""
+    st.subheader("📊 球隊深度分析")
+
     teams = sorted(df['TEAM_ABBREVIATION'].unique().tolist())
     selected_team = st.selectbox("選擇要分析的球隊", teams, key="ai_team")
-    
+
     analysis_type = st.radio(
         "分析類型",
         ["陣容診斷", "交易建議", "補強方向", "選秀策略"]
     )
-    
-    if st.button("🚀 開始 AI 分析", type="primary"):
+
+    if st.button("🚀 開始分析", type="primary"):
         team_df = df[df['TEAM_ABBREVIATION'] == selected_team]
-        
+
         with st.spinner("AI 分析中..."):
-            # 這裡會呼叫 AI 分析模組
-            analysis_result = generate_ai_analysis(
-                df, team_df, selected_team, analysis_type
-            )
-            
+            if claude_available:
+                # 使用 Claude API
+                claude = ClaudeAnalysisEngine()
+                if analysis_type == "陣容診斷":
+                    question = "請對這支球隊進行完整的陣容診斷，包含優劣勢分析"
+                elif analysis_type == "交易建議":
+                    question = "請提供具體的交易建議，包含應該交易出去的球員和適合追求的目標"
+                elif analysis_type == "補強方向":
+                    question = "請分析這支球隊的補強優先順序和推薦的球員類型"
+                else:
+                    question = "請提供選秀策略建議，包含應該優先選擇的位置和球員類型"
+
+                analysis_result = claude.analyze_with_claude(df, selected_team, question)
+            else:
+                # 使用本地規則分析
+                analysis_result = generate_ai_analysis(
+                    df, team_df, selected_team, analysis_type
+                )
+
             st.markdown("---")
             st.subheader("📋 分析報告")
             st.markdown(analysis_result)
+
+
+def render_ai_trade_analysis(df: pd.DataFrame, claude_available: bool):
+    """渲染 AI 交易分析"""
+    st.subheader("🔄 AI 輔助交易分析")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        team_a = st.selectbox("A 隊", sorted(df['TEAM_ABBREVIATION'].unique()), key="trade_team_a")
+        team_a_players = df[df['TEAM_ABBREVIATION'] == team_a]['PLAYER_NAME'].tolist()
+        team_a_gives = st.multiselect("A 隊送出", team_a_players, key="trade_a_gives")
+
+    with col2:
+        team_b = st.selectbox("B 隊", sorted(df['TEAM_ABBREVIATION'].unique()), key="trade_team_b")
+        team_b_players = df[df['TEAM_ABBREVIATION'] == team_b]['PLAYER_NAME'].tolist()
+        team_b_gives = st.multiselect("B 隊送出", team_b_players, key="trade_b_gives")
+
+    if st.button("🔍 AI 分析這筆交易", type="primary"):
+        if not team_a_gives or not team_b_gives:
+            st.error("請選擇雙方要交易的球員")
+        else:
+            with st.spinner("AI 分析交易中..."):
+                if claude_available:
+                    claude = ClaudeAnalysisEngine()
+                    result = claude.simulate_trade_analysis(
+                        df, team_a, team_a_gives, team_b, team_b_gives
+                    )
+                else:
+                    # 本地分析
+                    engine = TradeValueEngine()
+                    trade_result = engine.simulate_trade(df, team_a_gives, team_b_gives)
+
+                    result = f"""## 交易分析結果
+
+**{team_a} 送出**: {', '.join(team_a_gives)}
+**{team_b} 送出**: {', '.join(team_b_gives)}
+
+### 薪資匹配
+{'✅ 薪資匹配成功' if trade_result['salary_match'] else f"❌ 薪資匹配失敗，差距 ${trade_result['salary_diff_m']:.1f}M"}
+
+### 價值分析
+- A 隊送出總價值: {trade_result['team_a_package']['total_trade_value']:.1f}
+- B 隊送出總價值: {trade_result['team_b_package']['total_trade_value']:.1f}
+- 價值差異: {abs(trade_result['value_difference']):.1f}
+
+### 結論
+{trade_result['verdict']}
+
+💡 **提示**: 設置 ANTHROPIC_API_KEY 可獲得更詳細的 AI 分析
+"""
+
+                st.markdown("---")
+                st.markdown(result)
 
 
 def generate_ai_analysis(full_df: pd.DataFrame, team_df: pd.DataFrame, 
@@ -660,8 +815,10 @@ def main():
     
     # 頁腳
     st.sidebar.markdown("---")
-    st.sidebar.markdown("🏀 NBA Trade Value System v1.0")
+    st.sidebar.markdown("🏀 NBA Trade Value System v2.0")
     st.sidebar.markdown("📊 數據更新: 2024-25 賽季")
+    api_status = "🟢" if os.getenv('ANTHROPIC_API_KEY') else "🔴"
+    st.sidebar.markdown(f"{api_status} Claude API")
 
 
 if __name__ == "__main__":

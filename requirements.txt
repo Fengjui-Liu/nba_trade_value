@@ -3,3 +3,7 @@ numpy>=1.24
 nba_api>=1.4
 requests>=2.31
 beautifulsoup4>=4.12
+anthropic>=0.40.0
+streamlit>=1.40.0
+plotly>=5.18.0
+python-dotenv>=1.0.0
