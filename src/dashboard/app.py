@@ -31,7 +31,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.trade_value_engine import TradeValueEngine
 from modules.contract_module import ContractModule
-from modules.ai_analysis_module import AIAnalysisModule, ClaudeAnalysisEngine, OllamaAnalysisEngine
 
 # 頁面配置
 st.set_page_config(
@@ -1249,7 +1248,7 @@ def main():
     # 頁面選擇
     page = st.sidebar.radio(
         "功能",
-        ["交易模擬", "球員搜尋", "球隊分析", "AI 分析"],
+        ["交易模擬", "球員搜尋", "球隊分析"],
         label_visibility="collapsed"
     )
 
@@ -1261,18 +1260,10 @@ def main():
         render_player_search(filtered_df)
     elif page == "球隊分析":
         render_team_analysis(df)
-    elif page == "AI 分析":
-        render_ai_analysis(df)
 
     # 頁腳
     st.sidebar.markdown("---")
     st.sidebar.markdown("📊 2024-25 賽季數據")
-
-    # AI 狀態
-    ollama_check = OllamaAnalysisEngine()
-    ollama_status = "🟢" if ollama_check.is_available() else "🔴"
-    claude_status = "🟢" if os.getenv('ANTHROPIC_API_KEY') else "🔴"
-    st.sidebar.markdown(f"{ollama_status} Ollama | {claude_status} Claude")
 
 
 if __name__ == "__main__":
