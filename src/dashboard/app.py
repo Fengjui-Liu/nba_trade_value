@@ -1221,39 +1221,37 @@ def generate_ai_analysis(full_df: pd.DataFrame, team_df: pd.DataFrame,
 
 def main():
     """主程式"""
-    render_header()
-    
     # 載入數據
     df = load_data()
-    
+
     if df is None:
         st.stop()
-    
-    # 側邊欄篩選
-    filtered_df = render_sidebar(df)
-    
+
+    # 簡化的側邊欄
+    st.sidebar.markdown("## 🏀 NBA Trade Machine")
+    st.sidebar.markdown("---")
+
     # 頁面選擇
     page = st.sidebar.radio(
-        "📑 頁面",
-        ["總覽", "球員搜尋", "交易模擬", "球隊分析", "AI 分析"]
+        "功能",
+        ["交易模擬", "球員搜尋", "球隊分析", "AI 分析"],
+        label_visibility="collapsed"
     )
-    
+
     # 渲染對應頁面
-    if page == "總覽":
-        render_overview(filtered_df)
+    if page == "交易模擬":
+        render_trade_simulator(df)
     elif page == "球員搜尋":
+        filtered_df = render_sidebar(df)
         render_player_search(filtered_df)
-    elif page == "交易模擬":
-        render_trade_simulator(df)  # 交易模擬使用完整數據
     elif page == "球隊分析":
         render_team_analysis(df)
     elif page == "AI 分析":
         render_ai_analysis(df)
-    
+
     # 頁腳
     st.sidebar.markdown("---")
-    st.sidebar.markdown("🏀 NBA Trade Value System v2.0")
-    st.sidebar.markdown("📊 數據更新: 2024-25 賽季")
+    st.sidebar.markdown("📊 2024-25 賽季數據")
 
     # AI 狀態
     ollama_check = OllamaAnalysisEngine()
