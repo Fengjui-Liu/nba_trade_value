@@ -689,22 +689,41 @@ class OllamaAnalysisEngine:
     """
     Ollama 本地 LLM 引擎（完全免費）
 
-    需要先安裝 Ollama 並下載模型：
+    適合 8GB RAM 的輕量模型：
+    - qwen2.5:3b (~2GB) - 中文佳，推薦
+    - llama3.2:3b (~2GB)
+    - phi3:mini (~2GB)
+    - gemma2:2b (~1.5GB)
+
+    使用步驟：
     1. 安裝: https://ollama.com/download
-    2. 下載模型: ollama pull llama3.1
+    2. 下載模型: ollama pull qwen2.5:3b
     3. 啟動服務: ollama serve
     """
 
-    def __init__(self, model: str = "llama3.1", base_url: str = "http://localhost:11434"):
+    def __init__(self, model: str = "qwen2.5:3b", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url
 
     def is_available(self) -> bool:
-        """檢查 Ollama 是否可用"""
+        """檢查 Ollama 服務是否運行"""
         try:
             import requests
             resp = requests.get(f"{self.base_url}/api/tags", timeout=2)
             return resp.status_code == 200
+        except:
+            return False
+
+    def has_model(self, model: str = None) -> bool:
+        """檢查是否已安裝指定模型"""
+        try:
+            import requests
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                models = resp.json().get('models', [])
+                target = model or self.model
+                return any(target in m.get('name', '') for m in models)
+            return False
         except:
             return False
 
@@ -713,7 +732,10 @@ class OllamaAnalysisEngine:
         import requests
 
         if not self.is_available():
-            return "❌ Ollama 未啟動。請先執行 `ollama serve` 並下載模型 `ollama pull llama3.1`"
+            return "❌ Ollama 未啟動。請先執行 `ollama serve`"
+
+        if not self.has_model():
+            return f"❌ 模型 {self.model} 未安裝。請執行 `ollama pull {self.model}`"
 
         try:
             full_prompt = prompt
