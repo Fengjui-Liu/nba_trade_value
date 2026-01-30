@@ -1,6 +1,6 @@
 """
 NBA 球員進階數據收集
-抓取 2024-25 賽季所有球員的效率與進階指標
+抓取 2025-26 賽季所有球員的效率與進階指標
 """
 
 from nba_api.stats.endpoints import leaguedashplayerstats
@@ -8,11 +8,11 @@ from nba_api.stats.endpoints import leaguedashplayerbiostats
 import pandas as pd
 import time
 
-def get_player_advanced_stats(season="2024-25"):
+def get_player_advanced_stats(season="2025-26"):
     """抓取球員進階數據"""
-    
+
     print(f"正在抓取 {season} 賽季球員數據...")
-    
+
     # 基本數據
     print("  抓取基本數據...")
     player_base = leaguedashplayerstats.LeagueDashPlayerStats(
@@ -22,7 +22,7 @@ def get_player_advanced_stats(season="2024-25"):
     )
     time.sleep(1)
     df_base = player_base.get_data_frames()[0]
-    
+
     # 進階數據
     print("  抓取進階數據...")
     player_advanced = leaguedashplayerstats.LeagueDashPlayerStats(
@@ -32,7 +32,7 @@ def get_player_advanced_stats(season="2024-25"):
     )
     time.sleep(1)
     df_advanced = player_advanced.get_data_frames()[0]
-    
+
     # 球員基本資料
     print("  抓取球員資料...")
     player_bio = leaguedashplayerbiostats.LeagueDashPlayerBioStats(
@@ -40,15 +40,15 @@ def get_player_advanced_stats(season="2024-25"):
     )
     time.sleep(1)
     df_bio = player_bio.get_data_frames()[0]
-    
+
     print(f"  基本數據：{len(df_base)} 筆")
     print(f"  進階數據：{len(df_advanced)} 筆")
     print(f"  球員資料：{len(df_bio)} 筆")
-    
+
     # 看看進階數據有哪些欄位
     print("\n進階數據可用欄位：")
     print(df_advanced.columns.tolist())
-    
+
     return df_advanced, df_base, df_bio
 
 
@@ -90,22 +90,23 @@ def merge_player_data(df_advanced, df_base, df_bio):
 
 def main():
     # 抓取數據
-    df_advanced, df_base, df_bio = get_player_advanced_stats("2024-25")
-    
+    season = "2025-26"
+    df_advanced, df_base, df_bio = get_player_advanced_stats(season)
+
     # 合併數據
     df_players = merge_player_data(df_advanced, df_base, df_bio)
-    
+
     # 儲存
-    output_path = "data/raw/player_stats_2024-25.csv"
+    output_path = f"data/raw/player_stats_{season}.csv"
     df_players.to_csv(output_path, index=False)
     print(f"\n數據已儲存至 {output_path}")
     print(f"共 {len(df_players)} 名球員，{len(df_players.columns)} 個欄位")
-    
+
     # 預覽
     print("\n前 10 名球員預覽：")
     preview_cols = ['PLAYER_NAME', 'PTS', 'NET_RATING', 'PIE', 'TS_PCT']
     print(df_players[preview_cols].head(10).to_string())
-    
+
     return df_players
 
 
