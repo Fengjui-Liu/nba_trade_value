@@ -153,13 +153,13 @@ def load_data():
 
 def render_header():
     """渲染標題"""
-    st.markdown('<p class="main-header">🏀 NBA 交易價值分析系統</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-header">NBA 交易價值分析系統</p>', unsafe_allow_html=True)
     st.markdown("---")
 
 
 def render_sidebar(df: pd.DataFrame):
     """渲染側邊欄"""
-    st.sidebar.header("🔧 篩選條件")
+    st.sidebar.header("篩選條件")
     
     # 球隊篩選
     teams = ['全部'] + sorted(df['TEAM_ABBREVIATION'].unique().tolist())
@@ -209,7 +209,7 @@ def render_sidebar(df: pd.DataFrame):
 
 def render_overview(df: pd.DataFrame):
     """渲染總覽頁面"""
-    st.header("📊 總覽")
+    st.header("總覽")
     
     # 關鍵指標
     col1, col2, col3, col4 = st.columns(4)
@@ -293,7 +293,7 @@ def render_overview(df: pd.DataFrame):
 
 def render_player_search(df: pd.DataFrame):
     """渲染球員搜尋頁面"""
-    st.header("🔍 球員搜尋與比較")
+    st.header("球員搜尋與比較")
     
     # 搜尋框
     search_term = st.text_input("搜尋球員名稱")
@@ -315,7 +315,7 @@ def render_player_search(df: pd.DataFrame):
     st.markdown("---")
     
     # 球員比較
-    st.subheader("📊 球員比較")
+    st.subheader("球員比較")
     
     player_names = df['PLAYER_NAME'].tolist()
     selected_players = st.multiselect(
@@ -362,8 +362,8 @@ def render_player_search(df: pd.DataFrame):
 
 
 def render_trade_simulator(df: pd.DataFrame):
-    """渲染專業交易模擬器 - ESPN Trade Machine 風格"""
-    st.markdown("## 🏀 NBA Trade Machine")
+    """渲染專業交易模擬器"""
+    st.markdown("## NBA Trade Machine")
     st.markdown("*模擬真實交易，分析價值與薪資匹配*")
 
     # 初始化交易狀態
@@ -400,7 +400,7 @@ def render_trade_simulator(df: pd.DataFrame):
         st.session_state.trade_team_b = team_b
 
     if team_a == team_b:
-        st.warning("⚠️ 請選擇兩支不同的球隊")
+        st.warning("請選擇兩支不同的球隊")
         return
 
     st.markdown("---")
@@ -420,7 +420,7 @@ def render_trade_simulator(df: pd.DataFrame):
 
     # 選秀籤區域
     st.markdown("---")
-    st.markdown("### 🎯 加入選秀籤")
+    st.markdown("### 加入選秀籤")
 
     pick_col1, pick_col2 = st.columns(2)
 
@@ -428,7 +428,7 @@ def render_trade_simulator(df: pd.DataFrame):
         st.markdown(f"**{team_a} 送出選秀籤**")
         picks_a = st.multiselect(
             "選擇選秀籤",
-            get_draft_pick_options(),
+            get_team_draft_picks(team_a),
             key="picks_a",
             default=st.session_state.draft_picks_a
         )
@@ -438,7 +438,7 @@ def render_trade_simulator(df: pd.DataFrame):
         st.markdown(f"**{team_b} 送出選秀籤**")
         picks_b = st.multiselect(
             "選擇選秀籤",
-            get_draft_pick_options(),
+            get_team_draft_picks(team_b),
             key="picks_b",
             default=st.session_state.draft_picks_b
         )
@@ -455,10 +455,10 @@ def render_trade_simulator(df: pd.DataFrame):
         render_trade_analysis(df, team_a, team_a_players, picks_a,
                              team_b, team_b_players, picks_b)
     else:
-        st.info("👆 從上方選擇要交易的球員開始模擬")
+        st.info("從上方選擇要交易的球員開始模擬")
 
     # 重置按鈕
-    if st.button("🔄 重置交易", type="secondary"):
+    if st.button("重置交易", type="secondary"):
         st.session_state.team_a_selected = []
         st.session_state.team_b_selected = []
         st.session_state.draft_picks_a = []
@@ -466,57 +466,64 @@ def render_trade_simulator(df: pd.DataFrame):
         st.rerun()
 
 
-def get_draft_pick_options():
-    """取得可用的選秀籤選項"""
-    current_year = 2025
+def get_team_draft_picks(team: str):
+    """取得球隊擁有的選秀籤（簡化版 - 實際應從資料庫讀取）"""
+    # 基本上每隊有自己的籤，這裡列出已知的交易情況
+    # 資料來源應該要定期更新
+
+    # 已送出選秀籤的球隊（2025年1月資料）
+    traded_picks = {
+        'LAL': ['2025 1輪', '2027 1輪'],  # 送給 NOP (AD交易)
+        'BKN': ['2025 1輪', '2026 1輪', '2027 1輪'],  # 送給多隊
+        'UTA': [],  # 收到很多籤
+        'HOU': [],  # 收到很多籤
+        'OKC': [],  # 收到很多籤
+        'PHX': ['2025 1輪', '2027 1輪', '2029 1輪'],  # KD交易
+    }
+
     picks = []
-    for year in range(current_year, current_year + 4):
+    team_traded = traded_picks.get(team, [])
+
+    for year in range(2025, 2029):
         for round_num in [1, 2]:
-            for protection in ["無保護", "前10保護", "前14保護", "樂透保護"]:
-                picks.append(f"{year} {round_num}輪 ({protection})")
+            pick_name = f"{year} {round_num}輪"
+            if pick_name not in team_traded:
+                picks.append(f"{team} {year} {round_num}輪")
+
     return picks
 
 
 def get_pick_value(pick_str: str) -> float:
     """計算選秀籤的預估價值"""
-    # 基礎價值
-    base_values = {
-        "1輪": 25,
-        "2輪": 5
-    }
-
-    # 保護程度減少價值
-    protection_multipliers = {
-        "無保護": 1.0,
-        "前10保護": 0.7,
-        "前14保護": 0.5,
-        "樂透保護": 0.4
-    }
-
-    # 年份折扣
-    current_year = 2025
-
-    # 解析選秀籤
+    # 格式: "TEAM 2025 1輪" 或 "TEAM 2025 2輪"
     parts = pick_str.split()
-    year = int(parts[0])
-    round_type = parts[1]
-    protection = pick_str.split("(")[1].replace(")", "")
+    if len(parts) < 3:
+        return 10
 
-    base = base_values.get(round_type, 10)
-    multiplier = protection_multipliers.get(protection, 0.5)
+    year = int(parts[1])
+    round_type = parts[2]
+
+    # 基礎價值
+    base = 25 if "1輪" in round_type else 5
+
+    # 年份折扣（越遠的籤價值越低）
+    current_year = 2025
     year_discount = max(0.5, 1 - (year - current_year) * 0.1)
 
-    return base * multiplier * year_discount
+    return base * year_discount
 
 
 def render_team_trade_panel(team: str, roster: pd.DataFrame, side: str, full_df: pd.DataFrame):
     """渲染球隊交易面板"""
-    # 取得球隊顏色（簡化版）
+    # 取得球隊顏色
     team_colors = {
         'LAL': '#552583', 'BOS': '#007A33', 'MIA': '#98002E', 'GSW': '#006BB6',
         'PHX': '#1D1160', 'MIL': '#00471B', 'DEN': '#0E2240', 'MEM': '#5D76A9',
         'OKC': '#007AC1', 'CLE': '#6F263D', 'SAC': '#5A2D81', 'NYK': '#006BB6',
-        'PHI': '#006BB6', 'DAL': '#00538C', 'MIN': '#0C2340', 'NOP': '#0C2340'
+        'PHI': '#006BB6', 'DAL': '#00538C', 'MIN': '#0C2340', 'NOP': '#0C2340',
+        'ATL': '#E03A3E', 'CHI': '#CE1141', 'CHA': '#1D1160', 'DET': '#C8102E',
+        'IND': '#002D62', 'TOR': '#CE1141', 'WAS': '#002B5C', 'ORL': '#0077C0',
+        'POR': '#E03A3E', 'SAS': '#C4CED4', 'LAC': '#C8102E', 'HOU': '#CE1141'
     }
     bg_color = team_colors.get(team, '#1a1a2e')
 
@@ -532,21 +539,28 @@ def render_team_trade_panel(team: str, roster: pd.DataFrame, side: str, full_df:
     selected_key = f"team_{side}_selected"
     current_selected = st.session_state.get(selected_key, [])
 
-    # 建立球員選項（顯示薪資資訊）
+    # 建立球員選項（顯示薪資和合約年限）
     player_options = []
     player_map = {}
     for _, row in roster.iterrows():
-        label = f"{row['PLAYER_NAME']} (${row['SALARY_M']:.1f}M)"
+        years = int(row.get('YEARS_REMAINING', 1)) if pd.notna(row.get('YEARS_REMAINING')) else 1
+        contract_type = row.get('CONTRACT_TYPE_CN', '')
+        label = f"{row['PLAYER_NAME']} - ${row['SALARY_M']:.1f}M / {years}年"
         player_options.append(label)
         player_map[label] = row['PLAYER_NAME']
 
     # 反向映射當前選中的球員
-    current_labels = [f"{p} (${roster[roster['PLAYER_NAME']==p]['SALARY_M'].values[0]:.1f}M)"
-                      for p in current_selected if p in roster['PLAYER_NAME'].values]
+    current_labels = []
+    for p in current_selected:
+        if p in roster['PLAYER_NAME'].values:
+            row = roster[roster['PLAYER_NAME']==p].iloc[0]
+            years = int(row.get('YEARS_REMAINING', 1)) if pd.notna(row.get('YEARS_REMAINING')) else 1
+            label = f"{p} - ${row['SALARY_M']:.1f}M / {years}年"
+            current_labels.append(label)
 
     # 用 multiselect 選擇球員
     selected_labels = st.multiselect(
-        f"點擊選擇 {team} 要送出的球員 ↓",
+        f"選擇 {team} 送出的球員",
         player_options,
         default=current_labels,
         key=f"select_{side}",
@@ -562,19 +576,39 @@ def render_team_trade_panel(team: str, roster: pd.DataFrame, side: str, full_df:
         total_selected_salary = selected_df['SALARY_M'].sum()
         st.success(f"已選 {len(selected)} 人，薪資: ${total_selected_salary:.1f}M")
 
-    # 顯示陣容表格（簡化版）
-    display_roster = roster[['PLAYER_NAME', 'AGE', 'SALARY_M', 'TRADE_VALUE']].copy()
-    display_roster.columns = ['球員', '年齡', '薪資(M)', '價值']
+    # 顯示陣容表格（含合約資訊）
+    display_cols = ['PLAYER_NAME', 'AGE', 'SALARY_M', 'YEARS_REMAINING', 'CONTRACT_TYPE_CN', 'TRADE_VALUE']
+    available_cols = [c for c in display_cols if c in roster.columns]
+    display_roster = roster[available_cols].copy()
+
+    # 重新命名欄位
+    col_names = {
+        'PLAYER_NAME': '球員',
+        'AGE': '年齡',
+        'SALARY_M': '薪資(M)',
+        'YEARS_REMAINING': '剩餘年',
+        'CONTRACT_TYPE_CN': '合約類型',
+        'TRADE_VALUE': '價值'
+    }
+    display_roster = display_roster.rename(columns=col_names)
 
     # 標記已選擇的球員
-    display_roster[''] = display_roster['球員'].apply(lambda x: '✓' if x in selected else '')
+    display_roster[''] = display_roster['球員'].apply(lambda x: '*' if x in selected else '')
 
     # 格式化數字
     display_roster['薪資(M)'] = display_roster['薪資(M)'].apply(lambda x: f"${x:.1f}")
     display_roster['價值'] = display_roster['價值'].apply(lambda x: f"{x:.0f}")
+    if '剩餘年' in display_roster.columns:
+        display_roster['剩餘年'] = display_roster['剩餘年'].apply(lambda x: f"{int(x)}" if pd.notna(x) else "-")
 
     # 重新排序欄位
-    display_roster = display_roster[['', '球員', '年齡', '薪資(M)', '價值']]
+    final_cols = ['', '球員', '年齡', '薪資(M)']
+    if '剩餘年' in display_roster.columns:
+        final_cols.append('剩餘年')
+    if '合約類型' in display_roster.columns:
+        final_cols.append('合約類型')
+    final_cols.append('價值')
+    display_roster = display_roster[final_cols]
 
     st.dataframe(
         display_roster,
@@ -588,7 +622,7 @@ def render_trade_analysis(df: pd.DataFrame,
                           team_a: str, players_a: list, picks_a: list,
                           team_b: str, players_b: list, picks_b: list):
     """渲染交易分析結果"""
-    st.markdown("## 📊 交易分析")
+    st.markdown("## 交易分析")
 
     # 計算價值
     team_a_df = df[df['PLAYER_NAME'].isin(players_a)]
@@ -609,6 +643,12 @@ def render_trade_analysis(df: pd.DataFrame,
     salary_a = team_a_df['SALARY_M'].sum() if len(team_a_df) > 0 else 0
     salary_b = team_b_df['SALARY_M'].sum() if len(team_b_df) > 0 else 0
 
+    # 統計數據
+    avg_age_a = team_a_df['AGE'].mean() if len(team_a_df) > 0 else 0
+    avg_age_b = team_b_df['AGE'].mean() if len(team_b_df) > 0 else 0
+    total_pts_a = team_a_df['PTS'].sum() if len(team_a_df) > 0 else 0
+    total_pts_b = team_b_df['PTS'].sum() if len(team_b_df) > 0 else 0
+
     # 薪資匹配規則：125% + $100K
     def check_salary_match(outgoing, incoming):
         if outgoing == 0:
@@ -616,8 +656,8 @@ def render_trade_analysis(df: pd.DataFrame,
         threshold = outgoing * 1.25 + 0.1
         return incoming <= threshold
 
-    salary_ok_a = check_salary_match(salary_a, salary_b)  # A 送出, 收到 B
-    salary_ok_b = check_salary_match(salary_b, salary_a)  # B 送出, 收到 A
+    salary_ok_a = check_salary_match(salary_a, salary_b)
+    salary_ok_b = check_salary_match(salary_b, salary_a)
     salary_match = salary_ok_a and salary_ok_b
 
     # 交易評估
@@ -626,95 +666,86 @@ def render_trade_analysis(df: pd.DataFrame,
     if abs(value_diff) <= 10:
         trade_grade = "A"
         trade_verdict = "公平交易"
-        trade_class = "trade-fair"
     elif abs(value_diff) <= 20:
         trade_grade = "B"
-        trade_verdict = f"{'A' if value_diff > 0 else 'B'} 隊略佔優勢"
-        trade_class = "trade-fair"
+        trade_verdict = f"{team_a if value_diff > 0 else team_b} 略佔優勢"
     elif abs(value_diff) <= 35:
         trade_grade = "C"
-        trade_verdict = f"{'A' if value_diff > 0 else 'B'} 隊佔優勢"
-        trade_class = "trade-unfair"
+        trade_verdict = f"{team_a if value_diff > 0 else team_b} 佔優勢"
     else:
         trade_grade = "F"
-        trade_verdict = f"不公平交易 - {'A' if value_diff > 0 else 'B'} 隊大賺"
-        trade_class = "trade-unfair"
+        trade_verdict = f"不平衡 - {team_a if value_diff > 0 else team_b} 獲益較大"
 
     # 顯示結果
     col1, col_mid, col2 = st.columns([2, 1, 2])
 
     with col1:
         st.markdown(f"### {team_a} 送出")
-        st.markdown(f"""
-        <div class='trade-package'>
-            <h4>球員</h4>
-        </div>
-        """, unsafe_allow_html=True)
 
         for _, row in team_a_df.iterrows():
+            years = int(row.get('YEARS_REMAINING', 1)) if pd.notna(row.get('YEARS_REMAINING')) else 1
+            contract = row.get('CONTRACT_TYPE_CN', '-')
             st.markdown(f"""
-            **{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
-            💰 ${row['SALARY_M']:.1f}M | 📊 價值: {row['TRADE_VALUE']:.0f}
-            """, unsafe_allow_html=True)
-            st.markdown("---")
+**{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
+- 薪資: ${row['SALARY_M']:.1f}M | 合約: {years}年 {contract}
+- 數據: {row['PTS']:.1f}分 {row['REB']:.1f}籃板 {row['AST']:.1f}助攻
+- 交易價值: {row['TRADE_VALUE']:.0f}
+            """)
 
         if picks_a:
-            st.markdown("**🎯 選秀籤**")
+            st.markdown("**選秀籤**")
             for pick in picks_a:
                 pick_val = get_pick_value(pick)
-                st.markdown(f"""
-                <div class='draft-pick-card'>
-                    {pick} (價值: {pick_val:.0f})
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"- {pick} (價值: {pick_val:.0f})")
 
-        st.markdown(f"### 總價值: **{total_a:.0f}**")
-        st.markdown(f"總薪資: **${salary_a:.1f}M**")
+        st.markdown(f"""
+---
+**總價值: {total_a:.0f}**
+總薪資: ${salary_a:.1f}M | 平均年齡: {avg_age_a:.1f}
+        """)
 
     with col_mid:
-        st.markdown("<div style='text-align: center; padding: 3rem 0;'>", unsafe_allow_html=True)
-        st.markdown(f"## {trade_grade}")
-        st.markdown(f"**{trade_verdict}**")
+        st.markdown(f"""
+<div style='text-align: center; padding: 2rem 0;'>
+<h1>{trade_grade}</h1>
+<p><b>{trade_verdict}</b></p>
+<p>價值差: {abs(value_diff):.0f}</p>
+</div>
+        """, unsafe_allow_html=True)
 
         if salary_match:
-            st.markdown("<span class='salary-ok'>✅ 薪資匹配</span>", unsafe_allow_html=True)
+            st.success("薪資匹配通過")
         else:
-            st.markdown("<span class='salary-fail'>❌ 薪資不匹配</span>", unsafe_allow_html=True)
-            st.markdown(f"差距: ${abs(salary_a - salary_b):.1f}M")
-
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.error(f"薪資不匹配 (差距: ${abs(salary_a - salary_b):.1f}M)")
 
     with col2:
         st.markdown(f"### {team_b} 送出")
-        st.markdown(f"""
-        <div class='trade-package'>
-            <h4>球員</h4>
-        </div>
-        """, unsafe_allow_html=True)
 
         for _, row in team_b_df.iterrows():
+            years = int(row.get('YEARS_REMAINING', 1)) if pd.notna(row.get('YEARS_REMAINING')) else 1
+            contract = row.get('CONTRACT_TYPE_CN', '-')
             st.markdown(f"""
-            **{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
-            💰 ${row['SALARY_M']:.1f}M | 📊 價值: {row['TRADE_VALUE']:.0f}
-            """, unsafe_allow_html=True)
-            st.markdown("---")
+**{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
+- 薪資: ${row['SALARY_M']:.1f}M | 合約: {years}年 {contract}
+- 數據: {row['PTS']:.1f}分 {row['REB']:.1f}籃板 {row['AST']:.1f}助攻
+- 交易價值: {row['TRADE_VALUE']:.0f}
+            """)
 
         if picks_b:
-            st.markdown("**🎯 選秀籤**")
+            st.markdown("**選秀籤**")
             for pick in picks_b:
                 pick_val = get_pick_value(pick)
-                st.markdown(f"""
-                <div class='draft-pick-card'>
-                    {pick} (價值: {pick_val:.0f})
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"- {pick} (價值: {pick_val:.0f})")
 
-        st.markdown(f"### 總價值: **{total_b:.0f}**")
-        st.markdown(f"總薪資: **${salary_b:.1f}M**")
+        st.markdown(f"""
+---
+**總價值: {total_b:.0f}**
+總薪資: ${salary_b:.1f}M | 平均年齡: {avg_age_b:.1f}
+        """)
 
     # 視覺化比較
     st.markdown("---")
-    st.markdown("### 📈 價值對比")
+    st.markdown("### 價值對比")
 
     # 使用 Plotly 製作對比圖
     fig = go.Figure()
@@ -750,7 +781,7 @@ def render_trade_analysis(df: pd.DataFrame,
     st.plotly_chart(fig, use_container_width=True)
 
     # 交易後陣容變化
-    st.markdown("### 🔄 交易後陣容變化")
+    st.markdown("### 交易後陣容變化")
 
     change_col1, change_col2 = st.columns(2)
 
@@ -789,7 +820,7 @@ def render_trade_analysis(df: pd.DataFrame,
 
 def render_team_analysis(df: pd.DataFrame):
     """渲染球隊分析頁面"""
-    st.header("🏟️ 球隊分析")
+    st.header("球隊分析")
     
     teams = sorted(df['TEAM_ABBREVIATION'].unique().tolist())
     selected_team = st.selectbox("選擇球隊", teams)
@@ -815,7 +846,7 @@ def render_team_analysis(df: pd.DataFrame):
         st.markdown("---")
         
         # 陣容列表
-        st.subheader("📋 陣容")
+        st.subheader("陣容")
         roster_cols = ['PLAYER_NAME', 'AGE', 'POSITIONS', 'PTS', 'REB', 'AST',
                       'TRADE_VALUE', 'SALARY_M', 'SURPLUS_VALUE_M', 'PLAY_STYLE_CN']
         st.dataframe(
@@ -847,7 +878,7 @@ def render_team_analysis(df: pd.DataFrame):
             st.plotly_chart(fig, use_container_width=True)
         
         # 薪資結構
-        st.subheader("💰 薪資結構")
+        st.subheader("薪資結構")
         fig = px.bar(
             team_df.sort_values('SALARY_M', ascending=True),
             x='SALARY_M',
@@ -1242,7 +1273,7 @@ def main():
         st.stop()
 
     # 簡化的側邊欄
-    st.sidebar.markdown("## 🏀 NBA Trade Machine")
+    st.sidebar.markdown("## NBA Trade Machine")
     st.sidebar.markdown("---")
 
     # 頁面選擇
