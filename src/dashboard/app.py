@@ -31,7 +31,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.trade_value_engine import TradeValueEngine
 from modules.contract_module import ContractModule
-from modules.ai_analysis_module import AIAnalysisModule, ClaudeAnalysisEngine, OllamaAnalysisEngine
 
 # 頁面配置
 st.set_page_config(
@@ -525,7 +524,7 @@ def render_team_trade_panel(team: str, roster: pd.DataFrame, side: str, full_df:
     <div style='background: {bg_color}; color: white; padding: 1rem;
                 border-radius: 10px 10px 0 0; text-align: center;'>
         <h3 style='margin: 0;'>{team}</h3>
-        <small>薪資: ${roster['SALARY_M'].sum():.1f}M</small>
+        <small>總薪資: ${roster['SALARY_M'].sum():.1f}M</small>
     </div>
     """, unsafe_allow_html=True)
 
@@ -533,36 +532,55 @@ def render_team_trade_panel(team: str, roster: pd.DataFrame, side: str, full_df:
     selected_key = f"team_{side}_selected"
     current_selected = st.session_state.get(selected_key, [])
 
+    # 建立球員選項（顯示薪資資訊）
+    player_options = []
+    player_map = {}
+    for _, row in roster.iterrows():
+        label = f"{row['PLAYER_NAME']} (${row['SALARY_M']:.1f}M)"
+        player_options.append(label)
+        player_map[label] = row['PLAYER_NAME']
+
+    # 反向映射當前選中的球員
+    current_labels = [f"{p} (${roster[roster['PLAYER_NAME']==p]['SALARY_M'].values[0]:.1f}M)"
+                      for p in current_selected if p in roster['PLAYER_NAME'].values]
+
     # 用 multiselect 選擇球員
-    player_options = roster['PLAYER_NAME'].tolist()
-    selected = st.multiselect(
-        f"選擇 {team} 送出的球員",
+    selected_labels = st.multiselect(
+        f"點擊選擇 {team} 要送出的球員 ↓",
         player_options,
-        default=current_selected,
+        default=current_labels,
         key=f"select_{side}",
-        label_visibility="collapsed"
     )
+
+    # 轉換回球員名稱
+    selected = [player_map[label] for label in selected_labels]
     st.session_state[selected_key] = selected
 
-    # 顯示陣容表格
-    display_roster = roster[['PLAYER_NAME', 'AGE', 'SALARY_M', 'TRADE_VALUE', 'SURPLUS_VALUE_M']].copy()
-    display_roster.columns = ['球員', '年齡', '薪資(M)', '交易價值', '剩餘價值(M)']
+    # 顯示已選球員的薪資總計
+    if selected:
+        selected_df = roster[roster['PLAYER_NAME'].isin(selected)]
+        total_selected_salary = selected_df['SALARY_M'].sum()
+        st.success(f"已選 {len(selected)} 人，薪資: ${total_selected_salary:.1f}M")
+
+    # 顯示陣容表格（簡化版）
+    display_roster = roster[['PLAYER_NAME', 'AGE', 'SALARY_M', 'TRADE_VALUE']].copy()
+    display_roster.columns = ['球員', '年齡', '薪資(M)', '價值']
 
     # 標記已選擇的球員
-    display_roster['已選'] = display_roster['球員'].apply(lambda x: '✅' if x in selected else '')
+    display_roster[''] = display_roster['球員'].apply(lambda x: '✓' if x in selected else '')
 
     # 格式化數字
     display_roster['薪資(M)'] = display_roster['薪資(M)'].apply(lambda x: f"${x:.1f}")
-    display_roster['交易價值'] = display_roster['交易價值'].apply(lambda x: f"{x:.0f}")
-    display_roster['剩餘價值(M)'] = display_roster['剩餘價值(M)'].apply(
-        lambda x: f"+${x:.1f}" if x >= 0 else f"-${abs(x):.1f}"
-    )
+    display_roster['價值'] = display_roster['價值'].apply(lambda x: f"{x:.0f}")
+
+    # 重新排序欄位
+    display_roster = display_roster[['', '球員', '年齡', '薪資(M)', '價值']]
 
     st.dataframe(
         display_roster,
         use_container_width=True,
         hide_index=True,
-        height=350
+        height=300
     )
 
 
@@ -634,11 +652,9 @@ def render_trade_analysis(df: pd.DataFrame,
         """, unsafe_allow_html=True)
 
         for _, row in team_a_df.iterrows():
-            surplus_class = "surplus-positive" if row['SURPLUS_VALUE_M'] >= 0 else "surplus-negative"
             st.markdown(f"""
             **{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
             💰 ${row['SALARY_M']:.1f}M | 📊 價值: {row['TRADE_VALUE']:.0f}
-            <span class='{surplus_class}'>剩餘價值: ${row['SURPLUS_VALUE_M']:+.1f}M</span>
             """, unsafe_allow_html=True)
             st.markdown("---")
 
@@ -677,11 +693,9 @@ def render_trade_analysis(df: pd.DataFrame,
         """, unsafe_allow_html=True)
 
         for _, row in team_b_df.iterrows():
-            surplus_class = "surplus-positive" if row['SURPLUS_VALUE_M'] >= 0 else "surplus-negative"
             st.markdown(f"""
             **{row['PLAYER_NAME']}** ({row['AGE']:.0f}歲)
             💰 ${row['SALARY_M']:.1f}M | 📊 價值: {row['TRADE_VALUE']:.0f}
-            <span class='{surplus_class}'>剩餘價值: ${row['SURPLUS_VALUE_M']:+.1f}M</span>
             """, unsafe_allow_html=True)
             st.markdown("---")
 
@@ -1234,7 +1248,7 @@ def main():
     # 頁面選擇
     page = st.sidebar.radio(
         "功能",
-        ["交易模擬", "球員搜尋", "球隊分析", "AI 分析"],
+        ["交易模擬", "球員搜尋", "球隊分析"],
         label_visibility="collapsed"
     )
 
@@ -1246,18 +1260,10 @@ def main():
         render_player_search(filtered_df)
     elif page == "球隊分析":
         render_team_analysis(df)
-    elif page == "AI 分析":
-        render_ai_analysis(df)
 
     # 頁腳
     st.sidebar.markdown("---")
     st.sidebar.markdown("📊 2024-25 賽季數據")
-
-    # AI 狀態
-    ollama_check = OllamaAnalysisEngine()
-    ollama_status = "🟢" if ollama_check.is_available() else "🔴"
-    claude_status = "🟢" if os.getenv('ANTHROPIC_API_KEY') else "🔴"
-    st.sidebar.markdown(f"{ollama_status} Ollama | {claude_status} Claude")
 
 
 if __name__ == "__main__":
