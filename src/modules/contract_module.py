@@ -63,7 +63,7 @@ CONTRACT_TYPES = {
 class ContractModule:
     """合約分析模組"""
     
-    def __init__(self, salary_cap: float = SALARY_CAP_2025):
+    def __init__(self, salary_cap: float = SALARY_CAP_2026):
         self.salary_cap = salary_cap
         
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
