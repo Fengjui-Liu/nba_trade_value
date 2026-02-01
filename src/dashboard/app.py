@@ -660,21 +660,24 @@ def render_trade_analysis(df: pd.DataFrame,
     salary_ok_b = check_salary_match(salary_b, salary_a)
     salary_match = salary_ok_a and salary_ok_b
 
-    # 交易評估
-    value_diff = total_a - total_b
+    # 計算進階數據變化
+    # A隊：失去 team_a_df，得到 team_b_df
+    # B隊：失去 team_b_df，得到 team_a_df
 
-    if abs(value_diff) <= 10:
-        trade_grade = "A"
-        trade_verdict = "公平交易"
-    elif abs(value_diff) <= 20:
-        trade_grade = "B"
-        trade_verdict = f"{team_a if value_diff > 0 else team_b} 略佔優勢"
-    elif abs(value_diff) <= 35:
-        trade_grade = "C"
-        trade_verdict = f"{team_a if value_diff > 0 else team_b} 佔優勢"
-    else:
-        trade_grade = "F"
-        trade_verdict = f"不平衡 - {team_a if value_diff > 0 else team_b} 獲益較大"
+    def calc_stats(player_df):
+        if len(player_df) == 0:
+            return {'PTS': 0, 'REB': 0, 'AST': 0, 'OFF_RATING': 0, 'DEF_RATING': 0, 'NET_RATING': 0}
+        return {
+            'PTS': player_df['PTS'].sum(),
+            'REB': player_df['REB'].sum(),
+            'AST': player_df['AST'].sum(),
+            'OFF_RATING': player_df['OFF_RATING'].mean() if 'OFF_RATING' in player_df.columns else 0,
+            'DEF_RATING': player_df['DEF_RATING'].mean() if 'DEF_RATING' in player_df.columns else 0,
+            'NET_RATING': player_df['NET_RATING'].mean() if 'NET_RATING' in player_df.columns else 0,
+        }
+
+    stats_a_out = calc_stats(team_a_df)
+    stats_b_out = calc_stats(team_b_df)
 
     # 顯示結果
     col1, col_mid, col2 = st.columns([2, 1, 2])
@@ -705,18 +708,16 @@ def render_trade_analysis(df: pd.DataFrame,
         """)
 
     with col_mid:
-        st.markdown(f"""
-<div style='text-align: center; padding: 2rem 0;'>
-<h1>{trade_grade}</h1>
-<p><b>{trade_verdict}</b></p>
-<p>價值差: {abs(value_diff):.0f}</p>
-</div>
-        """, unsafe_allow_html=True)
-
         if salary_match:
             st.success("薪資匹配通過")
         else:
             st.error(f"薪資不匹配 (差距: ${abs(salary_a - salary_b):.1f}M)")
+
+        st.markdown("---")
+        st.markdown("**價值比較**")
+        st.markdown(f"- {team_a} 送出: {total_a:.0f}")
+        st.markdown(f"- {team_b} 送出: {total_b:.0f}")
+        st.markdown(f"- 差距: {abs(total_a - total_b):.0f}")
 
     with col2:
         st.markdown(f"### {team_b} 送出")
@@ -742,6 +743,54 @@ def render_trade_analysis(df: pd.DataFrame,
 **總價值: {total_b:.0f}**
 總薪資: ${salary_b:.1f}M | 平均年齡: {avg_age_b:.1f}
         """)
+
+    # 交易後數據變化
+    st.markdown("---")
+    st.markdown("### 交易後數據變化")
+
+    change_col1, change_col2 = st.columns(2)
+
+    with change_col1:
+        st.markdown(f"**{team_a} 交易後變化**")
+        st.markdown("(失去左側球員，得到右側球員)")
+
+        pts_change_a = stats_b_out['PTS'] - stats_a_out['PTS']
+        reb_change_a = stats_b_out['REB'] - stats_a_out['REB']
+        ast_change_a = stats_b_out['AST'] - stats_a_out['AST']
+        ortg_change_a = stats_b_out['OFF_RATING'] - stats_a_out['OFF_RATING']
+        drtg_change_a = stats_b_out['DEF_RATING'] - stats_a_out['DEF_RATING']
+        net_change_a = stats_b_out['NET_RATING'] - stats_a_out['NET_RATING']
+
+        col_stat1, col_stat2 = st.columns(2)
+        with col_stat1:
+            st.metric("得分", f"{stats_b_out['PTS']:.1f}", f"{pts_change_a:+.1f}")
+            st.metric("籃板", f"{stats_b_out['REB']:.1f}", f"{reb_change_a:+.1f}")
+            st.metric("助攻", f"{stats_b_out['AST']:.1f}", f"{ast_change_a:+.1f}")
+        with col_stat2:
+            st.metric("ORTG", f"{stats_b_out['OFF_RATING']:.1f}", f"{ortg_change_a:+.1f}")
+            st.metric("DRTG", f"{stats_b_out['DEF_RATING']:.1f}", f"{drtg_change_a:+.1f}" if drtg_change_a <= 0 else f"{drtg_change_a:+.1f}", delta_color="inverse")
+            st.metric("NET", f"{stats_b_out['NET_RATING']:.1f}", f"{net_change_a:+.1f}")
+
+    with change_col2:
+        st.markdown(f"**{team_b} 交易後變化**")
+        st.markdown("(失去右側球員，得到左側球員)")
+
+        pts_change_b = stats_a_out['PTS'] - stats_b_out['PTS']
+        reb_change_b = stats_a_out['REB'] - stats_b_out['REB']
+        ast_change_b = stats_a_out['AST'] - stats_b_out['AST']
+        ortg_change_b = stats_a_out['OFF_RATING'] - stats_b_out['OFF_RATING']
+        drtg_change_b = stats_a_out['DEF_RATING'] - stats_b_out['DEF_RATING']
+        net_change_b = stats_a_out['NET_RATING'] - stats_b_out['NET_RATING']
+
+        col_stat3, col_stat4 = st.columns(2)
+        with col_stat3:
+            st.metric("得分", f"{stats_a_out['PTS']:.1f}", f"{pts_change_b:+.1f}")
+            st.metric("籃板", f"{stats_a_out['REB']:.1f}", f"{reb_change_b:+.1f}")
+            st.metric("助攻", f"{stats_a_out['AST']:.1f}", f"{ast_change_b:+.1f}")
+        with col_stat4:
+            st.metric("ORTG", f"{stats_a_out['OFF_RATING']:.1f}", f"{ortg_change_b:+.1f}")
+            st.metric("DRTG", f"{stats_a_out['DEF_RATING']:.1f}", f"{drtg_change_b:+.1f}" if drtg_change_b <= 0 else f"{drtg_change_b:+.1f}", delta_color="inverse")
+            st.metric("NET", f"{stats_a_out['NET_RATING']:.1f}", f"{net_change_b:+.1f}")
 
     # 視覺化比較
     st.markdown("---")
