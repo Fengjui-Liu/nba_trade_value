@@ -16,8 +16,8 @@ def normalize_name(name):
 def fix_and_merge():
     """修正名稱後重新合併"""
     
-    df_stats = pd.read_csv("data/raw/player_stats_2024-25.csv")
-    df_salary = pd.read_csv("data/raw/player_salaries_2024-25.csv")
+    df_stats = pd.read_csv("data/raw/player_stats_2025-26.csv")
+    df_salary = pd.read_csv("data/raw/player_salaries_2025-26.csv")
     
     print(f"進階數據：{len(df_stats)} 名球員")
     print(f"薪資數據：{len(df_salary)} 名球員")
