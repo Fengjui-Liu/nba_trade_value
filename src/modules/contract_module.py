@@ -15,17 +15,17 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 
-# 2024-25 NBA 薪資帽相關
-SALARY_CAP_2025 = 140.588  # $140.588M
-LUXURY_TAX_2025 = 170.814  # $170.814M
-FIRST_APRON = 178.132
-SECOND_APRON = 188.931
+# 2025-26 NBA 薪資帽相關 (預估)
+SALARY_CAP_2026 = 153.0  # $153M
+LUXURY_TAX_2026 = 186.0  # $186M
+FIRST_APRON = 193.0
+SECOND_APRON = 205.0
 
 # 最大薪資比例
 MAX_SALARY_PCT = {
-    '0-6': 0.25,   # 25% = ~$35.1M
-    '7-9': 0.30,   # 30% = ~$42.2M
-    '10+': 0.35,   # 35% = ~$49.2M (Supermax)
+    '0-6': 0.25,   # 25% = ~$38.3M
+    '7-9': 0.30,   # 30% = ~$45.9M
+    '10+': 0.35,   # 35% = ~$53.6M (Supermax)
 }
 
 # 選秀權價值 (基於歷史數據分析)

@@ -1294,7 +1294,7 @@ def main():
 
     # 頁腳
     st.sidebar.markdown("---")
-    st.sidebar.markdown("📊 2024-25 賽季數據")
+    st.sidebar.markdown("2025-26 賽季數據")
 
 
 if __name__ == "__main__":

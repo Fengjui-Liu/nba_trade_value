@@ -14,11 +14,11 @@ import pandas as pd
 import numpy as np
 
 
-# 2024-25 NBA 薪資帽
-SALARY_CAP_2025 = 140_588_000
-LUXURY_TAX_2025 = 170_814_000
-FIRST_APRON_2025 = 178_132_000
-SECOND_APRON_2025 = 188_931_000
+# 2025-26 NBA 薪資帽 (預估)
+SALARY_CAP_2026 = 153_000_000
+LUXURY_TAX_2026 = 186_000_000
+FIRST_APRON_2026 = 193_000_000
+SECOND_APRON_2026 = 205_000_000
 
 # 最大薪資比例（依年資）
 MAX_SALARY_PCT = {
@@ -31,9 +31,9 @@ MAX_SALARY_PCT = {
 class SalaryModule:
     """薪資分析模組"""
 
-    def __init__(self, salary_cap=SALARY_CAP_2025):
+    def __init__(self, salary_cap=SALARY_CAP_2026):
         self.salary_cap = salary_cap
-        self.luxury_tax = LUXURY_TAX_2025
+        self.luxury_tax = LUXURY_TAX_2026
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """

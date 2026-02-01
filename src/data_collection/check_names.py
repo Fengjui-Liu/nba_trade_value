@@ -7,8 +7,8 @@ import pandas as pd
 def check_missing_players():
     """找出未匹配的重要球員"""
     
-    df_stats = pd.read_csv("data/raw/player_stats_2024-25.csv")
-    df_salary = pd.read_csv("data/raw/player_salaries_2024-25.csv")
+    df_stats = pd.read_csv("data/raw/player_stats_2025-26.csv")
+    df_salary = pd.read_csv("data/raw/player_salaries_2025-26.csv")
     
     # 找出高薪但未匹配的球員
     salary_names = set(df_salary['PLAYER_NAME'])

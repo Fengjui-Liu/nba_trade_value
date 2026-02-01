@@ -1,6 +1,6 @@
 """
 NBA 球員薪資數據收集
-從 ESPN 抓取 2024-25 賽季薪資
+從 ESPN 抓取 2025-26 賽季薪資
 """
 
 import requests
@@ -20,7 +20,7 @@ def get_espn_salaries():
     }
     
     while True:
-        url = f"https://www.espn.com/nba/salaries/_/year/2025/page/{page}"
+        url = f"https://www.espn.com/nba/salaries/_/year/2026/page/{page}"
         print(f"正在抓取第 {page} 頁...")
         
         response = requests.get(url, headers=headers)
@@ -99,7 +99,7 @@ def main():
     df_salary['SALARY_M'] = (df_salary['SALARY'] / 1_000_000).round(2)
     
     # 儲存
-    output_path = "data/raw/player_salaries_2024-25.csv"
+    output_path = "data/raw/player_salaries_2025-26.csv"
     df_salary.to_csv(output_path, index=False)
     print(f"\n薪資數據已儲存至 {output_path}")
     
