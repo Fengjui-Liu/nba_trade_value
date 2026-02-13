@@ -13,12 +13,22 @@
 import pandas as pd
 import numpy as np
 
+try:
+    from src.config import SALARY_CAP_M, LUXURY_TAX_M, FIRST_APRON_M, SECOND_APRON_M
+except ImportError:
+    from config import SALARY_CAP_M, LUXURY_TAX_M, FIRST_APRON_M, SECOND_APRON_M
+
+try:
+    from src.models.scoring_config import get_default_scoring_config
+except ImportError:
+    from models.scoring_config import get_default_scoring_config
+
 
 # 2025-26 NBA 薪資帽 (預估)
-SALARY_CAP_2026 = 153_000_000
-LUXURY_TAX_2026 = 186_000_000
-FIRST_APRON_2026 = 193_000_000
-SECOND_APRON_2026 = 205_000_000
+SALARY_CAP_2026 = int(SALARY_CAP_M * 1_000_000)
+LUXURY_TAX_2026 = int(LUXURY_TAX_M * 1_000_000)
+FIRST_APRON_2026 = int(FIRST_APRON_M * 1_000_000)
+SECOND_APRON_2026 = int(SECOND_APRON_M * 1_000_000)
 
 # 最大薪資比例（依年資）
 MAX_SALARY_PCT = {
@@ -31,9 +41,13 @@ MAX_SALARY_PCT = {
 class SalaryModule:
     """薪資分析模組"""
 
-    def __init__(self, salary_cap=SALARY_CAP_2026):
+    def __init__(self, salary_cap=SALARY_CAP_2026, scoring_config=None):
         self.salary_cap = salary_cap
         self.luxury_tax = LUXURY_TAX_2026
+        self.scoring_config = scoring_config or get_default_scoring_config()
+        self.salary_tiers = self.scoring_config["salary_model"]["salary_tiers"]
+        self.market_segments = self.scoring_config["salary_model"]["market_segments"]
+        self.age_discounts = self.scoring_config["salary_model"]["age_discounts"]
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -75,20 +89,10 @@ class SalaryModule:
         """將薪資分為等級"""
         if pd.isna(salary_m):
             return "UNKNOWN"
-        if salary_m >= 40:
-            return "SUPERMAX"     # 超級頂薪
-        elif salary_m >= 30:
-            return "MAX"          # 頂薪
-        elif salary_m >= 20:
-            return "NEAR_MAX"     # 接近頂薪
-        elif salary_m >= 10:
-            return "MID_LEVEL"    # 中產等級
-        elif salary_m >= 5:
-            return "ROLE_PLAYER"  # 角色球員
-        elif salary_m >= 2:
-            return "MINIMUM_PLUS" # 底薪+
-        else:
-            return "MINIMUM"      # 底薪
+        for tier_name, min_salary in self.salary_tiers:
+            if salary_m >= float(min_salary):
+                return str(tier_name)
+        return "MINIMUM"
 
     def _estimate_market_value(self, value_score: float, age: float) -> float:
         """
@@ -106,25 +110,28 @@ class SalaryModule:
 
         score = float(value_score)
 
-        if score >= 90:
-            market_val = 40 + (score - 90) / 10 * 11  # 40-51M
-        elif score >= 70:
-            market_val = 20 + (score - 70) / 20 * 20  # 20-40M
-        elif score >= 50:
-            market_val = 8 + (score - 50) / 20 * 12   # 8-20M
-        elif score >= 30:
-            market_val = 3 + (score - 30) / 20 * 5    # 3-8M
-        else:
-            market_val = max(1.0, score / 30 * 3)       # 1-3M
+        market_val = 0.0
+        for threshold, min_val, max_val in self.market_segments:
+            threshold = float(threshold)
+            min_val = float(min_val)
+            max_val = float(max_val)
+            if score >= threshold:
+                if threshold >= 90:
+                    market_val = min_val + (score - threshold) / 10 * (max_val - min_val)
+                elif threshold > 0:
+                    market_val = min_val + (score - threshold) / 20 * (max_val - min_val)
+                else:
+                    market_val = max(1.0, score / 30 * max_val)
+                break
 
         # 年齡折扣（影響未來合約預期）
         if not pd.isna(age):
             if age >= 35:
-                market_val *= 0.70
+                market_val *= float(self.age_discounts["gte_35"])
             elif age >= 33:
-                market_val *= 0.85
+                market_val *= float(self.age_discounts["gte_33"])
             elif age >= 31:
-                market_val *= 0.95
+                market_val *= float(self.age_discounts["gte_31"])
 
         return round(market_val, 2)
 

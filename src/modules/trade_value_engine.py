@@ -15,16 +15,32 @@
 import pandas as pd
 import numpy as np
 
+try:
+    from .contract_module import ContractModule
+    from .cba_rules import build_context, evaluate_trade
+    from .rule_types import RULE_VERSION, TradeSideInput
+    from src.models.scoring_config import get_default_scoring_config
+except ImportError:
+    from src.modules.contract_module import ContractModule
+    from src.modules.cba_rules import build_context, evaluate_trade
+    from src.modules.rule_types import RULE_VERSION, TradeSideInput
+    from models.scoring_config import get_default_scoring_config
+
 
 class TradeValueEngine:
     """交易價值計算引擎"""
 
-    # 權重配置
+    # 預設權重配置（可由 config 覆蓋）
     WEIGHTS = {
-        'performance': 0.50,  # 進階數據表現
-        'contract': 0.25,     # 薪資效率
-        'fit': 0.25,          # 適配彈性
+        'performance': 0.50,
+        'contract': 0.25,
+        'fit': 0.25,
     }
+
+    def __init__(self, scoring_config=None):
+        self.scoring_config = scoring_config or get_default_scoring_config()
+        self.weights = self.scoring_config["trade_value"]["weights"]
+        self.tier_thresholds = self.scoring_config["trade_value"]["tier_thresholds"]
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -44,9 +60,9 @@ class TradeValueEngine:
 
         # 2. 加權綜合交易價值
         df['TRADE_VALUE'] = (
-            df['PERF_SCORE_NORM'] * self.WEIGHTS['performance'] +
-            df['CONTRACT_SCORE_NORM'] * self.WEIGHTS['contract'] +
-            df['FIT_SCORE_NORM'] * self.WEIGHTS['fit']
+            df['PERF_SCORE_NORM'] * self.weights['performance'] +
+            df['CONTRACT_SCORE_NORM'] * self.weights['contract'] +
+            df['FIT_SCORE_NORM'] * self.weights['fit']
         ).round(1)
 
         # 3. 交易價值等級
@@ -74,15 +90,15 @@ class TradeValueEngine:
 
     def _classify_trade_tier(self, value: float) -> str:
         """交易價值等級分類"""
-        if value >= 85:
+        if value >= self.tier_thresholds['untouchable']:
             return 'UNTOUCHABLE'   # 不可交易等級
-        elif value >= 70:
+        elif value >= self.tier_thresholds['franchise']:
             return 'FRANCHISE'     # 基石球員
-        elif value >= 55:
+        elif value >= self.tier_thresholds['all_star']:
             return 'ALL_STAR'      # 全明星等級
-        elif value >= 40:
+        elif value >= self.tier_thresholds['quality_starter']:
             return 'QUALITY_STARTER'  # 優質先發
-        elif value >= 25:
+        elif value >= self.tier_thresholds['rotation']:
             return 'ROTATION'      # 輪替球員
         else:
             return 'TRADEABLE'     # 可交易
@@ -143,8 +159,13 @@ class TradeValueEngine:
         mask = df['PLAYER_NAME'].isin(player_names)
         return df.loc[mask, available_cols].sort_values('TRADE_VALUE', ascending=False)
 
-    def simulate_trade(self, df: pd.DataFrame,
-                       team_a_gives: list, team_b_gives: list) -> dict:
+    def simulate_trade(
+        self,
+        df: pd.DataFrame,
+        team_a_gives: list,
+        team_b_gives: list,
+        rule: str = RULE_VERSION,
+    ) -> dict:
         """
         模擬交易，比較雙方交換價值
 
@@ -169,15 +190,70 @@ class TradeValueEngine:
         pkg_a = _get_package_value(team_a_gives)
         pkg_b = _get_package_value(team_b_gives)
 
-        # 薪資匹配檢查 (NBA CBA 規則: 差距不能超過 125% + 100K)
         salary_diff = abs(pkg_a['total_salary_m'] - pkg_b['total_salary_m'])
-        higher_salary = max(pkg_a['total_salary_m'], pkg_b['total_salary_m'])
-        lower_salary = min(pkg_a['total_salary_m'], pkg_b['total_salary_m'])
-        salary_match = lower_salary * 1.25 + 0.1 >= higher_salary
+
+        # Infer team context from full roster payroll if possible.
+        team_a_code = None
+        team_b_code = None
+        if 'TEAM_ABBREVIATION' in df.columns:
+            a_rows = df[df['PLAYER_NAME'].isin(team_a_gives)]
+            b_rows = df[df['PLAYER_NAME'].isin(team_b_gives)]
+            if not a_rows.empty:
+                team_a_code = str(a_rows.iloc[0].get('TEAM_ABBREVIATION', '') or '')
+            if not b_rows.empty:
+                team_b_code = str(b_rows.iloc[0].get('TEAM_ABBREVIATION', '') or '')
+
+        if team_a_code and 'TEAM_ABBREVIATION' in df.columns and 'SALARY_M' in df.columns:
+            payroll_a = float(df[df['TEAM_ABBREVIATION'] == team_a_code]['SALARY_M'].sum())
+        else:
+            payroll_a = 0.0
+            team_a_code = team_a_code or "TEAM_A"
+
+        if team_b_code and 'TEAM_ABBREVIATION' in df.columns and 'SALARY_M' in df.columns:
+            payroll_b = float(df[df['TEAM_ABBREVIATION'] == team_b_code]['SALARY_M'].sum())
+        else:
+            payroll_b = 0.0
+            team_b_code = team_b_code or "TEAM_B"
+
+        if rule == RULE_VERSION:
+            cba_result = evaluate_trade(
+                side_a=TradeSideInput(
+                    team_code=team_a_code,
+                    outgoing_salary_m=pkg_a['total_salary_m'],
+                    incoming_salary_m=pkg_b['total_salary_m'],
+                    outgoing_players=max(1, len(team_a_gives)),
+                    incoming_players=max(1, len(team_b_gives)),
+                ),
+                side_b=TradeSideInput(
+                    team_code=team_b_code,
+                    outgoing_salary_m=pkg_b['total_salary_m'],
+                    incoming_salary_m=pkg_a['total_salary_m'],
+                    outgoing_players=max(1, len(team_b_gives)),
+                    incoming_players=max(1, len(team_a_gives)),
+                ),
+                context_a=build_context(team_a_code, payroll_a),
+                context_b=build_context(team_b_code, payroll_b),
+            )
+            salary_match = bool(cba_result["salary_match"])
+        else:
+            salary_ok_a = ContractModule.is_salary_match(
+                pkg_a['total_salary_m'],
+                pkg_b['total_salary_m'],
+                rule=rule,
+                outgoing_players=max(1, len(team_a_gives)),
+            )
+            salary_ok_b = ContractModule.is_salary_match(
+                pkg_b['total_salary_m'],
+                pkg_a['total_salary_m'],
+                rule=rule,
+                outgoing_players=max(1, len(team_b_gives)),
+            )
+            salary_match = salary_ok_a and salary_ok_b
+            cba_result = None
 
         value_diff = pkg_a['total_trade_value'] - pkg_b['total_trade_value']
 
-        return {
+        result = {
             'team_a_package': pkg_a,
             'team_b_package': pkg_b,
             'salary_match': salary_match,
@@ -188,6 +264,23 @@ class TradeValueEngine:
                 else f"{'A 隊' if value_diff > 0 else 'B 隊'}送出更多價值 ({abs(value_diff):.1f})"
             )
         }
+        if cba_result is not None:
+            result["rule_version"] = cba_result["rule_version"]
+            result["cba"] = {
+                "team_a": {
+                    "ok": cba_result["team_a"].ok,
+                    "max_incoming_m": cba_result["team_a"].max_incoming_m,
+                    "reasons": cba_result["team_a"].reasons,
+                    "warnings": cba_result["team_a"].warnings,
+                },
+                "team_b": {
+                    "ok": cba_result["team_b"].ok,
+                    "max_incoming_m": cba_result["team_b"].max_incoming_m,
+                    "reasons": cba_result["team_b"].reasons,
+                    "warnings": cba_result["team_b"].warnings,
+                },
+            }
+        return result
 
     def report(self, df: pd.DataFrame) -> str:
         """產生最終交易價值報告"""

@@ -16,6 +16,7 @@ import sys
 import os
 import pandas as pd
 import argparse
+import subprocess
 
 # 加入專案根目錄到路徑
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -268,7 +269,13 @@ def main():
     if args.dashboard:
         print("🚀 啟動 Streamlit 儀表板...")
         print("   URL: http://localhost:8501")
-        os.system('streamlit run src/dashboard/app.py')
+        try:
+            subprocess.run(
+                ["streamlit", "run", "src/dashboard/app.py"],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"啟動失敗: {e}")
         return
 
     # 抓取合約數據

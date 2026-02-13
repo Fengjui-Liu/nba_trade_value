@@ -13,6 +13,11 @@
 import pandas as pd
 import numpy as np
 
+try:
+    from src.models.scoring_config import get_default_scoring_config
+except ImportError:
+    from models.scoring_config import get_default_scoring_config
+
 
 # 打法風格定義
 PLAY_STYLES = {
@@ -40,6 +45,11 @@ POSITION_HEIGHT_MAP = {
 
 class FitModule:
     """適配度分析模組"""
+
+    def __init__(self, scoring_config=None):
+        self.scoring_config = scoring_config or get_default_scoring_config()
+        self.versatility_weights = self.scoring_config["fit_model"]["versatility_weights"]
+        self.def_role_scores = self.scoring_config["fit_model"]["defense_role_scores"]
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -221,15 +231,16 @@ class FitModule:
 
         # 攻防角色分數 — 非 LIMITED_DEFENDER 得分
         def_role_score = df['DEFENSIVE_ROLE'].apply(
-            lambda x: 100 if x in ('VERSATILE_DEFENDER', 'PERIMETER_STOPPER')
-            else 70 if x in ('RIM_PROTECTOR', 'REBOUNDER', 'SOLID_DEFENDER')
-            else 30
+            lambda x: self.def_role_scores["elite"] if x in ('VERSATILE_DEFENDER', 'PERIMETER_STOPPER')
+            else self.def_role_scores["solid"] if x in ('RIM_PROTECTOR', 'REBOUNDER', 'SOLID_DEFENDER')
+            else self.def_role_scores["weak"]
         )
 
+        w = self.versatility_weights
         versatility = (
-            pos_score * 0.30 +
-            def_role_score * 0.30 +
-            balance_score * 0.40
+            pos_score * w["position"] +
+            def_role_score * w["defense"] +
+            balance_score * w["balance"]
         ).round(1)
 
         return versatility

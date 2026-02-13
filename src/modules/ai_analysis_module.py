@@ -18,6 +18,11 @@ import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
+try:
+    from src.modules.ai_cache import TradeAICache
+except ImportError:
+    from ai_cache import TradeAICache
+
 
 @dataclass
 class TeamProfile:
@@ -36,7 +41,7 @@ class TeamProfile:
 class AIAnalysisModule:
     """AI 分析模組"""
     
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, ai_cache: TradeAICache = None):
         """
         初始化 AI 模組
         
@@ -45,6 +50,52 @@ class AIAnalysisModule:
         """
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         self.model = "claude-sonnet-4-20250514"
+        self.ai_cache = ai_cache or TradeAICache()
+
+    @staticmethod
+    def build_trade_signature(team_a_gives: List[str], team_b_gives: List[str]) -> str:
+        a = "|".join(sorted(team_a_gives or []))
+        b = "|".join(sorted(team_b_gives or []))
+        return f"A:{a}__B:{b}"
+
+    def get_trade_commentary(
+        self,
+        df: pd.DataFrame,
+        team_a: str,
+        team_a_gives: List[str],
+        team_b: str,
+        team_b_gives: List[str],
+        rule_version: str,
+        scoring_config_hash: str,
+        use_ai: bool = False,
+        response_length: str = "medium",
+        token_mode: str = "standard",
+    ) -> Dict[str, Any]:
+        signature = self.build_trade_signature(team_a_gives, team_b_gives)
+        cache_key = self.ai_cache.build_cache_key(rule_version, scoring_config_hash, signature)
+        cached = self.ai_cache.get(cache_key)
+        if cached:
+            return {"text": cached.get("text", ""), "cache_hit": True, "cache_key": cache_key}
+
+        # Deterministic local summary by default.
+        summary = (
+            f"{team_a} 送出 {', '.join(team_a_gives)}；"
+            f"{team_b} 送出 {', '.join(team_b_gives)}。"
+            f"模式={token_mode}/{response_length}。"
+        )
+
+        if use_ai and self.api_key:
+            claude = ClaudeAnalysisEngine(self.api_key)
+            if claude.is_available():
+                summary = claude.simulate_trade_analysis(df, team_a, team_a_gives, team_b, team_b_gives)
+
+        if response_length == "short":
+            summary = summary[:240]
+        elif response_length == "medium":
+            summary = summary[:800]
+
+        self.ai_cache.set(cache_key, {"text": summary})
+        return {"text": summary, "cache_hit": False, "cache_key": cache_key}
         
     def analyze_team(self, df: pd.DataFrame, team: str) -> Dict[str, Any]:
         """

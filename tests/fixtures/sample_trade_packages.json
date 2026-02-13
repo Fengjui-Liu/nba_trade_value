@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "season": "2025-26",
+    "salary_rule": "tiered_2023",
+    "description": "Golden trade scenarios for deterministic regression checks."
+  },
+  "scenarios": [
+    {
+      "id": "okc_jdub_for_lal_gabe",
+      "team_a": "OKC",
+      "team_b": "LAL",
+      "team_a_gives": ["Jalen Williams"],
+      "team_b_gives": ["Gabe Vincent"],
+      "expected": {
+        "salary_match": true
+      }
+    },
+    {
+      "id": "okc_caruso_for_lal_rui",
+      "team_a": "OKC",
+      "team_b": "LAL",
+      "team_a_gives": ["Alex Caruso"],
+      "team_b_gives": ["Rui Hachimura"],
+      "expected": {
+        "salary_match": true
+      }
+    },
+    {
+      "id": "okc_shai_for_lal_package",
+      "team_a": "OKC",
+      "team_b": "LAL",
+      "team_a_gives": ["Shai Gilgeous-Alexander"],
+      "team_b_gives": ["Austin Reaves", "Rui Hachimura"],
+      "expected": {
+        "salary_match": true
+      }
+    },
+    {
+      "id": "okc_jdub_for_lal_rui_invalid",
+      "team_a": "OKC",
+      "team_b": "LAL",
+      "team_a_gives": ["Jalen Williams"],
+      "team_b_gives": ["Rui Hachimura"],
+      "expected": {
+        "salary_match": false
+      }
+    }
+  ]
+}

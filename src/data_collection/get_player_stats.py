@@ -6,9 +6,22 @@ NBA 球員進階數據收集
 from nba_api.stats.endpoints import leaguedashplayerstats
 from nba_api.stats.endpoints import leaguedashplayerbiostats
 import pandas as pd
+import numpy as np
 import time
+import argparse
+import os
+import sys
 
-def get_player_advanced_stats(season="2025-26"):
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+try:
+    from src.config import CURRENT_SEASON
+except ImportError:
+    CURRENT_SEASON = "2025-26"
+
+def get_player_advanced_stats(season=CURRENT_SEASON):
     """抓取球員進階數據"""
 
     print(f"正在抓取 {season} 賽季球員數據...")
@@ -56,8 +69,10 @@ def merge_player_data(df_advanced, df_base, df_bio):
     """合併數據，選取需要的欄位"""
     
     # 計算 eFG% 和 TS%
-    df_base['EFG_PCT'] = (df_base['FGM'] + 0.5 * df_base['FG3M']) / df_base['FGA']
-    df_base['TS_PCT'] = df_base['PTS'] / (2 * (df_base['FGA'] + 0.44 * df_base['FTA']))
+    efg_den = df_base['FGA']
+    ts_den = 2 * (df_base['FGA'] + 0.44 * df_base['FTA'])
+    df_base['EFG_PCT'] = np.where(efg_den > 0, (df_base['FGM'] + 0.5 * df_base['FG3M']) / efg_den, np.nan)
+    df_base['TS_PCT'] = np.where(ts_den > 0, df_base['PTS'] / ts_den, np.nan)
     
     # 從基本數據選取欄位
     base_cols = [
@@ -89,8 +104,12 @@ def merge_player_data(df_advanced, df_base, df_bio):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="抓取 NBA 球員基本與進階數據")
+    parser.add_argument("--season", type=str, default=CURRENT_SEASON, help="賽季字串，例如 2025-26")
+    args = parser.parse_args()
+
     # 抓取數據
-    season = "2025-26"
+    season = args.season
     df_advanced, df_base, df_bio = get_player_advanced_stats(season)
 
     # 合併數據

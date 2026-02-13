@@ -32,25 +32,117 @@ cd nba-trade-value
 
 # 安裝依賴
 pip install -r requirements.txt
+
+# 安裝開發/測試依賴（pytest / coverage / ruff）
+pip install -r requirements-dev.txt
+```
+
+### 開發環境（Dev Setup）
+
+```bash
+# 建議建立虛擬環境
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 安裝執行與開發依賴
+pip install -r requirements-dev.txt
 ```
 
 ### 執行分析
 
 ```bash
 # 基本執行
-python src/main_v2.py
+python src/main.py
 
 # 執行 AI 分析（指定球隊）
-python src/main_v2.py --ai-team OKC
+python src/main.py --ai-team OKC
 
 # 示範模式
-python src/main_v2.py --demo
+python src/main.py --demo
 
 # 啟動互動儀表板
-python src/main_v2.py --dashboard
+python src/main.py --dashboard
 # 或
 streamlit run src/dashboard/app.py
+
+# 一鍵資料更新流程
+python3 src/pipeline/run_full_refresh.py --season 2025-26 --year 2026
 ```
+
+### 資料收集（可選）
+
+```bash
+# 一鍵更新整個資料與輸出流程（推薦）
+python3 src/pipeline/run_full_refresh.py --season 2025-26 --year 2026
+
+# 如需忽略快取強制重跑
+python3 src/pipeline/run_full_refresh.py --season 2025-26 --year 2026 --force
+
+# 抓取球員統計（可指定賽季）
+python src/data_collection/get_player_stats.py --season 2025-26
+
+# 抓取 ESPN 薪資（可指定年份 / 頁數）
+python src/data_collection/get_salary_espn.py --year 2026 --max-pages 30
+
+# 合併統計與薪資
+python src/data_collection/fix_names_and_merge.py
+```
+
+### 測試
+
+```bash
+# 執行全部測試
+python3 -m pytest -q
+
+# 顯示更詳細結果
+python3 -m pytest -v
+
+# Phase 0 fixture regression 測試
+python3 -m pytest tests/test_phase0_regression_fixtures.py -q
+
+# 顯示 coverage（終端缺失行）
+python3 -m pytest \
+  --cov=src.modules.advanced_stats_module \
+  --cov=src.modules.salary_module \
+  --cov=src.modules.fit_module \
+  --cov=src.modules.contract_module \
+  --cov=src.modules.trade_value_engine \
+  --cov=src.data_collection.fix_names_and_merge \
+  --cov=src.data_collection.get_salary_espn \
+  --cov-report=term-missing \
+  --cov-fail-under=65
+
+# 產生 HTML coverage 報告（輸出到 htmlcov/）
+python3 -m pytest \
+  --cov=src.modules.advanced_stats_module \
+  --cov=src.modules.salary_module \
+  --cov=src.modules.fit_module \
+  --cov=src.modules.contract_module \
+  --cov=src.modules.trade_value_engine \
+  --cov=src.data_collection.fix_names_and_merge \
+  --cov=src.data_collection.get_salary_espn \
+  --cov-report=html
+
+# Lint (Ruff)
+ruff check .
+```
+
+### Backtest
+
+```bash
+python3 src/models/backtest.py \
+  --player-data data/processed/trade_value_full.csv \
+  --trades data/historical_trades/canonical_trades.csv
+```
+
+目前測試涵蓋：
+- 核心分析模組（advanced stats / salary / fit / contract / trade value）
+- 資料清理邏輯（名稱正規化）
+- 資料收集解析邏輯（以 mock session 測試，無實際網路請求）
+
+Coverage 設定：
+- 建議門檻為 `65%`（命令中 `--cov-fail-under=65`）
+- 如需調整門檻，修改命令中的 `--cov-fail-under` 數值即可
 
 ## 📊 輸出文件
 
@@ -125,7 +217,7 @@ TRADE_VALUE =
 ```
 nba_trade_value/
 ├── src/
-│   ├── main_v2.py              # 主程式
+│   ├── main.py                 # 主程式
 │   ├── data_collection/        # 數據收集腳本
 │   │   ├── get_player_stats.py
 │   │   ├── get_salary_espn.py

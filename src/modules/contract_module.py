@@ -14,12 +14,25 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional
+from itertools import combinations
+
+try:
+    from src.config import SALARY_CAP_M, LUXURY_TAX_M, FIRST_APRON_M, SECOND_APRON_M
+except ImportError:
+    from config import SALARY_CAP_M, LUXURY_TAX_M, FIRST_APRON_M, SECOND_APRON_M
+
+try:
+    from .cba_rules import legacy_is_salary_match, max_incoming_salary as cba_max_incoming_salary
+    from .rule_types import TeamCBAContext, TaxState
+except ImportError:
+    from src.modules.cba_rules import legacy_is_salary_match, max_incoming_salary as cba_max_incoming_salary
+    from src.modules.rule_types import TeamCBAContext, TaxState
 
 # 2025-26 NBA 薪資帽相關 (預估)
-SALARY_CAP_2026 = 153.0  # $153M
-LUXURY_TAX_2026 = 186.0  # $186M
-FIRST_APRON = 193.0
-SECOND_APRON = 205.0
+SALARY_CAP_2026 = SALARY_CAP_M
+LUXURY_TAX_2026 = LUXURY_TAX_M
+FIRST_APRON = FIRST_APRON_M
+SECOND_APRON = SECOND_APRON_M
 
 # 最大薪資比例
 MAX_SALARY_PCT = {
@@ -108,11 +121,53 @@ class ContractModule:
         # 7. 合約彈性分數
         df['CONTRACT_FLEXIBILITY'] = df.apply(self._calculate_flexibility, axis=1)
         
-        # 8. 薪資匹配範圍 (NBA CBA: 125% + $100K)
-        df['SALARY_MATCH_MIN'] = ((df['SALARY_M'] - 0.1) / 1.25).clip(lower=0).round(2)
-        df['SALARY_MATCH_MAX'] = (df['SALARY_M'] * 1.25 + 0.1).round(2)
+        # 8. 薪資匹配範圍（以分段規則估算單邊可接收上限）
+        df['SALARY_MATCH_MIN'] = 0.0
+        df['SALARY_MATCH_MAX'] = df['SALARY_M'].apply(
+            lambda x: self.max_incoming_salary(x, rule="tiered_2023")
+        )
         
         return df
+
+    @staticmethod
+    def max_incoming_salary(outgoing_m: float, rule: str = "tiered_2023") -> float:
+        """
+        計算送出薪資可接收的最大薪資（百萬）。
+
+        rule:
+        - tiered_2023: 分段規則（較接近現行 CBA 常用交易機器邏輯）
+        - simple_125: 舊版簡化 125% + 0.1
+        """
+        outgoing = max(0.0, float(outgoing_m or 0.0))
+
+        if rule == "simple_125":
+            return round(outgoing * 1.25 + 0.1, 2)
+        if rule == "tiered_2023":
+            if outgoing <= 7.5:
+                return round(outgoing * 2.0 + 0.25, 2)
+            if outgoing <= 29.0:
+                return round(outgoing + 7.5, 2)
+            return round(outgoing * 1.25 + 0.25, 2)
+
+        # cba_v1+: default to below-tax cap when no team context is provided
+        return cba_max_incoming_salary(outgoing, tax_state=TaxState.BELOW_TAX)
+
+    @staticmethod
+    def is_salary_match(
+        outgoing_m: float,
+        incoming_m: float,
+        rule: str = "tiered_2023",
+        context: Optional[TeamCBAContext] = None,
+        outgoing_players: int = 1,
+    ) -> bool:
+        """檢查單邊薪資匹配是否成立。"""
+        return legacy_is_salary_match(
+            outgoing_m=outgoing_m,
+            incoming_m=incoming_m,
+            rule=rule,
+            context=context,
+            outgoing_players=outgoing_players,
+        )
     
     def _classify_contract(self, row: pd.Series) -> Tuple[str, str]:
         """分類合約類型"""
@@ -328,42 +383,49 @@ class ContractModule:
         if team:
             candidates = candidates[candidates['TEAM_ABBREVIATION'] == team]
         
-        # 計算匹配範圍
-        min_match = (target_salary_m - 0.1) / 1.25
-        max_match = target_salary_m * 1.25 + 0.1
-        
-        # 單一球員匹配
-        single_match = candidates[
-            (candidates['SALARY_M'] >= min_match) & 
-            (candidates['SALARY_M'] <= max_match)
-        ].copy()
-        
-        if len(single_match) > 0:
-            single_match['MATCH_TYPE'] = 'SINGLE'
-            return single_match.nlargest(10, 'CONTRACT_FLEXIBILITY')
-        
-        # 多球員組合 (簡化：只找 2 人組合)
+        # 目標交易薪資的可接受送出下限（反推）
+        min_outgoing = max(0.0, target_salary_m - 7.5)
+
+        # 先收窄候選池，避免組合爆炸
+        candidates = candidates[candidates['SALARY_M'] >= 0.5].copy()
+        candidates = candidates.sort_values('SALARY_M', ascending=False).head(25)
+
         results = []
-        candidates_sorted = candidates.sort_values('SALARY_M', ascending=False)
-        
-        for i, row1 in candidates_sorted.iterrows():
-            remaining = target_salary_m - row1['SALARY_M']
-            if remaining > 0:
-                for j, row2 in candidates_sorted.iterrows():
-                    if i != j:
-                        combined = row1['SALARY_M'] + row2['SALARY_M']
-                        if min_match <= combined <= max_match:
-                            results.append({
-                                'PLAYERS': f"{row1['PLAYER_NAME']} + {row2['PLAYER_NAME']}",
-                                'COMBINED_SALARY': combined,
-                                'MATCH_TYPE': 'COMBO_2'
-                            })
-                            if len(results) >= 5:
-                                break
-            if len(results) >= 5:
+        rows = list(candidates.itertuples(index=False))
+        upper_k = max(1, min(int(max_players), 4))
+
+        for k in range(1, upper_k + 1):
+            for combo in combinations(rows, k):
+                outgoing = round(sum(p.SALARY_M for p in combo), 2)
+                if outgoing < min_outgoing:
+                    continue
+
+                if not self.is_salary_match(outgoing, target_salary_m, rule="tiered_2023"):
+                    continue
+
+                players = [p.PLAYER_NAME for p in combo]
+                flex_values = [float(getattr(p, "CONTRACT_FLEXIBILITY", 50.0) or 50.0) for p in combo]
+                results.append({
+                    'PLAYERS': " + ".join(players),
+                    'NUM_PLAYERS': k,
+                    'COMBINED_SALARY': outgoing,
+                    'INCOMING_TARGET': round(target_salary_m, 2),
+                    'MATCH_TYPE': 'SINGLE' if k == 1 else f'COMBO_{k}',
+                    'AVG_FLEXIBILITY': round(sum(flex_values) / len(flex_values), 1),
+                })
+
+                if len(results) >= 100:
+                    break
+            if len(results) >= 100:
                 break
-        
-        return pd.DataFrame(results) if results else pd.DataFrame()
+
+        if not results:
+            return pd.DataFrame()
+
+        out = pd.DataFrame(results)
+        out['SALARY_GAP'] = (out['COMBINED_SALARY'] - out['INCOMING_TARGET']).abs().round(2)
+        out = out.sort_values(['NUM_PLAYERS', 'SALARY_GAP', 'AVG_FLEXIBILITY'], ascending=[True, True, False])
+        return out.head(20).reset_index(drop=True)
     
     @staticmethod
     def get_draft_pick_value(pick_number: int, 

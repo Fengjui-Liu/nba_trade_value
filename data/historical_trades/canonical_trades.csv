@@ -1,0 +1,4 @@
+trade_id,team_a,team_b,team_a_gives,team_b_gives,expected_winner
+sample_1,OKC,LAL,"Jalen Williams","Gabe Vincent",team_a
+sample_2,OKC,LAL,"Alex Caruso","Rui Hachimura",balanced
+sample_3,LAL,OKC,"Gabe Vincent","Alex Caruso",team_b

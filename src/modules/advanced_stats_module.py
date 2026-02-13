@@ -14,6 +14,11 @@
 import pandas as pd
 import numpy as np
 
+try:
+    from src.models.scoring_config import get_default_scoring_config
+except ImportError:
+    from models.scoring_config import get_default_scoring_config
+
 
 # 聯盟平均基準值 (2024-25 賽季近似)
 LEAGUE_AVG = {
@@ -45,9 +50,13 @@ AGE_CURVE = {
 class AdvancedStatsModule:
     """進階數據分析模組"""
 
-    def __init__(self, min_gp=20, min_minutes=15):
+    def __init__(self, min_gp=20, min_minutes=15, scoring_config=None):
         self.min_gp = min_gp
         self.min_minutes = min_minutes
+        self.scoring_config = scoring_config or get_default_scoring_config()
+        self.league_avg = self.scoring_config["advanced_stats"]["league_avg"]
+        self.value_score_weights = self.scoring_config["advanced_stats"]["value_score_weights"]
+        self.age_adjustments = self.scoring_config["advanced_stats"]["age_adjustments"]
 
     def analyze(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -122,12 +131,12 @@ class AdvancedStatsModule:
         # 以 NET_RATING 為基礎，加入個人貢獻調整
         bpm = (
             df['NET_RATING'] * 0.3 +
-            (df['PTS'] - LEAGUE_AVG['PTS']) * 0.15 +
-            (df['REB'] - LEAGUE_AVG['REB']) * 0.20 +
-            (df['AST'] - LEAGUE_AVG['AST']) * 0.25 +
-            (df['STL'] - LEAGUE_AVG['STL']) * 1.5 +
-            (df['BLK'] - LEAGUE_AVG['BLK']) * 1.5 +
-            (df['TS_PCT'] - LEAGUE_AVG['TS_PCT']) * 20
+            (df['PTS'] - self.league_avg['PTS']) * 0.15 +
+            (df['REB'] - self.league_avg['REB']) * 0.20 +
+            (df['AST'] - self.league_avg['AST']) * 0.25 +
+            (df['STL'] - self.league_avg['STL']) * 1.5 +
+            (df['BLK'] - self.league_avg['BLK']) * 1.5 +
+            (df['TS_PCT'] - self.league_avg['TS_PCT']) * 20
         ).round(2)
 
         return bpm
@@ -170,16 +179,17 @@ class AdvancedStatsModule:
         """年齡分數調整"""
         if pd.isna(age):
             return 0
+        cfg = self.age_adjustments
         if age < 23:
-            return 5    # 高潛力新秀
+            return cfg["lt_23"]    # 高潛力新秀
         elif age < 25:
-            return 3    # 成長期
+            return cfg["lt_25"]    # 成長期
         elif age <= 28:
-            return 0    # 巔峰期
+            return cfg["lte_28"]    # 巔峰期
         elif age <= 32:
-            return -2   # 穩定期
+            return cfg["lte_32"]   # 穩定期
         else:
-            return -5   # 衰退風險
+            return cfg["gt_32"]   # 衰退風險
 
     def _calculate_value_score(self, df: pd.DataFrame) -> pd.Series:
         """
@@ -209,13 +219,14 @@ class AdvancedStatsModule:
 
         ts_score = df['TS_PCT'].rank(pct=True) * 100
 
+        w = self.value_score_weights
         value_score = (
-            pie_score * 0.25 +
-            per_score * 0.20 +
-            bpm_score * 0.15 +
-            production_score * 0.20 +
-            ts_score * 0.10 +
-            ws_score * 0.10
+            pie_score * w["pie"] +
+            per_score * w["per"] +
+            bpm_score * w["bpm"] +
+            production_score * w["production"] +
+            ts_score * w["ts"] +
+            ws_score * w["ws"]
         ).round(1)
 
         return value_score

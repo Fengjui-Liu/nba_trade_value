@@ -1,0 +1,68 @@
+name: experimental
+advanced_stats:
+  league_avg:
+    PTS: 14.0
+    REB: 4.5
+    AST: 3.0
+    STL: 0.7
+    BLK: 0.4
+    FG_PCT: 0.460
+    FG3_PCT: 0.360
+    FT_PCT: 0.780
+    TS_PCT: 0.570
+    USG_PCT: 0.200
+    PIE: 0.100
+    NET_RATING: 0.0
+    MIN: 20.0
+  value_score_weights:
+    pie: 0.22
+    per: 0.18
+    bpm: 0.20
+    production: 0.20
+    ts: 0.10
+    ws: 0.10
+  age_adjustments:
+    lt_23: 5
+    lt_25: 3
+    lte_28: 0
+    lte_32: -2
+    gt_32: -5
+salary_model:
+  salary_tiers:
+    - [SUPERMAX, 40]
+    - [MAX, 30]
+    - [NEAR_MAX, 20]
+    - [MID_LEVEL, 10]
+    - [ROLE_PLAYER, 5]
+    - [MINIMUM_PLUS, 2]
+    - [MINIMUM, 0]
+  market_segments:
+    - [90, 40, 51]
+    - [70, 20, 40]
+    - [50, 8, 20]
+    - [30, 3, 8]
+    - [0, 1, 3]
+  age_discounts:
+    gte_35: 0.70
+    gte_33: 0.85
+    gte_31: 0.95
+fit_model:
+  versatility_weights:
+    position: 0.25
+    defense: 0.35
+    balance: 0.40
+  defense_role_scores:
+    elite: 100
+    solid: 70
+    weak: 30
+trade_value:
+  weights:
+    performance: 0.45
+    contract: 0.25
+    fit: 0.30
+  tier_thresholds:
+    untouchable: 86
+    franchise: 71
+    all_star: 56
+    quality_starter: 41
+    rotation: 26
